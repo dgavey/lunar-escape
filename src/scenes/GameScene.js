@@ -46,6 +46,7 @@ export default class GameScene extends Phaser.Scene {
   create() {
     this.bonusScore    = 0;
     this.altitudeScore = 0;
+    this.currentAltitude = 0;
     this._gameOver     = false;
     this.launched      = false;
     this._landedPlatform = null;
@@ -547,7 +548,8 @@ export default class GameScene extends Phaser.Scene {
     if (!this.player._noclip) this._wrapPlayer();
     this.player.update(time, delta);
     this.worldGen.update(this.player.y);
-    this.altitudeScore = Math.max(this.altitudeScore, Math.floor((this._startY - this.player.y) / 8));
+    this.currentAltitude = Math.max(0, Math.floor((this._startY - this.player.y) / 8));
+    this.altitudeScore = Math.max(this.altitudeScore, this.currentAltitude);
     this.asteroidSpawner.update(this.altitudeScore);
 
     // ── Landing gear auto-deploy ────────────────────────────────

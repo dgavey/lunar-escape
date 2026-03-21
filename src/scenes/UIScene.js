@@ -139,7 +139,7 @@ export default class UIScene extends Phaser.Scene {
     const flash = boosted ? 0.6 + 0.35 * Math.sin(this.time.now * 0.008) : (pct > 0.3 ? 0.75 : 0.85);
     this.fuelFill.setAlpha(flash);
 
-    this.altText.setText(`ALT: ${game.altitudeScore}m / ${2500}m`);
+    this.altText.setText(`ALT: ${game.currentAltitude}m / ${2500}m`);
     this.scoreText.setText(`SCORE: ${game.getTotalScore()}`);
 
     if (game.launched && this.launchHint.visible) {
