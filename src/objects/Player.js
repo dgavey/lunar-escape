@@ -10,7 +10,7 @@
 const SHIP_SCALE = 1.5;       // 64×64 sprite scaled to ~96px
 const SPRITE_ANGLE = -90;    // rotate sprite so nose points up (sheet has it facing right)
 const TIP_GAME_OVER = 90;    // degrees from upright = game over (horizontal or inverted)
-const GEAR_DEPLOY_TIME = 700; // ms to fully deploy/retract
+const GEAR_DEPLOY_TIME = 467; // ms to fully deploy/retract
 const GEAR_LEG_SPREAD = 10;   // horizontal spread of leg feet from hinge
 
 // Lander collision shape — drawn in PhysicsEditor on the 64x64 sprite,
@@ -78,11 +78,14 @@ export default class Player extends Phaser.GameObjects.Rectangle {
       left:   Phaser.Input.Keyboard.KeyCodes.LEFT,
       right:  Phaser.Input.Keyboard.KeyCodes.RIGHT,
       thrust: Phaser.Input.Keyboard.KeyCodes.SPACE,
+      up:     Phaser.Input.Keyboard.KeyCodes.UP,
     });
 
     this._btnLeft   = false;
     this._btnRight  = false;
     this._btnThrust = false;
+
+    this.crystalBoostTimer = 0; // seconds remaining of no-fuel-burn boost
   }
 
   _computeCentroid(verts) {
@@ -292,7 +295,7 @@ export default class Player extends Phaser.GameObjects.Rectangle {
     const dt = delta / 1000;
     const rotLeft   = this.cursors.left.isDown  || this._btnLeft;
     const rotRight  = this.cursors.right.isDown || this._btnRight;
-    const thrusting = (this.cursors.thrust.isDown || this._btnThrust) && this.fuel > 0;
+    const thrusting = (this.cursors.thrust.isDown || this.cursors.up.isDown || this._btnThrust) && this.fuel > 0;
 
     this.grounded = this._groundContactIds.size > 0;
 
@@ -330,6 +333,9 @@ export default class Player extends Phaser.GameObjects.Rectangle {
       }
     }
 
+    // ── Crystal boost timer ────────────────────────────────────
+    if (this.crystalBoostTimer > 0) this.crystalBoostTimer = Math.max(0, this.crystalBoostTimer - dt);
+
     // ── Thrust ─────────────────────────────────────────────────
     if (thrusting) {
       const rad = this.rotation - Math.PI / 2;
@@ -337,7 +343,9 @@ export default class Player extends Phaser.GameObjects.Rectangle {
         x: Math.cos(rad) * this.thrustPower,
         y: Math.sin(rad) * this.thrustPower,
       });
-      this.fuel = Math.max(0, this.fuel - this.fuelBurnRate * dt);
+      if (this.crystalBoostTimer <= 0) {
+        this.fuel = Math.max(0, this.fuel - this.fuelBurnRate * dt);
+      }
     }
 
     // ── Clamp max velocity ─────────────────────────────────────

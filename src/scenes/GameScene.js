@@ -547,7 +547,7 @@ export default class GameScene extends Phaser.Scene {
     if (!this.player._noclip) this._wrapPlayer();
     this.player.update(time, delta);
     this.worldGen.update(this.player.y);
-    this.altitudeScore = Math.max(0, Math.floor((this._startY - this.player.y) / 8));
+    this.altitudeScore = Math.max(this.altitudeScore, Math.floor((this._startY - this.player.y) / 8));
     this.asteroidSpawner.update(this.altitudeScore);
 
     // ── Landing gear auto-deploy ────────────────────────────────
@@ -560,6 +560,7 @@ export default class GameScene extends Phaser.Scene {
     const crystalPts = this.worldGen.collectCrystals(this.player.x, this.player.y);
     if (crystalPts > 0) {
       this.bonusScore += crystalPts;
+      this.player.crystalBoostTimer = 2.5; // 2.5 second no-fuel-burn boost
       this._floatText(this.player.x, this.player.y - 30, `+${crystalPts}`, '#66eeff');
     }
 

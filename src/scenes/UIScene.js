@@ -134,8 +134,10 @@ export default class UIScene extends Phaser.Scene {
     const empty = this._fuelMaxH * (1 - pct);
     this.fuelFill.y = this._fuelY + empty;
     this.fuelFill.height = this._fuelMaxH * pct;
-    this.fuelFill.fillColor = pct > 0.3 ? 0x00ff44 : 0xff4400;
-    this.fuelFill.setAlpha(pct > 0.3 ? 0.75 : 0.85);
+    const boosted = game.player.crystalBoostTimer > 0;
+    this.fuelFill.fillColor = boosted ? 0x66eeff : pct > 0.3 ? 0x00ff44 : 0xff4400;
+    const flash = boosted ? 0.6 + 0.35 * Math.sin(this.time.now * 0.008) : (pct > 0.3 ? 0.75 : 0.85);
+    this.fuelFill.setAlpha(flash);
 
     this.altText.setText(`ALT: ${game.altitudeScore}m / ${2500}m`);
     this.scoreText.setText(`SCORE: ${game.getTotalScore()}`);

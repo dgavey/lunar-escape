@@ -107,9 +107,19 @@ export default class AsteroidSpawner {
   }
 
   _spawnForeground(x, y, vx, vy) {
+    // Sprite is 32x24, scaled 2x = 64x48 display pixels.
+    // Oval hitbox inset ~15% from sprite edges for a tight fit.
+    const hw = 13;  // half-width of oval (~27/2 in sprite pixels)
+    const hh = 9;   // half-height of oval (~19/2 in sprite pixels)
+    const N = 8;
+    const ovalVerts = [];
+    for (let i = 0; i < N; i++) {
+      const a = (2 * Math.PI * i) / N;
+      ovalVerts.push({ x: Math.cos(a) * hw, y: Math.sin(a) * hh });
+    }
+
     const sprite = this.scene.matter.add.image(x, y, 'asteroid_fg', null, {
-      shape: 'circle',
-      circleRadius: 12 * SCALE,
+      shape: { type: 'fromVertices', verts: ovalVerts },
       label: 'asteroid',
       restitution: 0.2,
       friction: 0.8,
