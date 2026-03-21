@@ -21,7 +21,9 @@ const CRYSTAL_COLLECT_DIST = 24; // pickup radius in pixels
 const TRIFORCE_POINTS     = 500;
 const TRIFORCE_BOOST      = 10;    // seconds of no-fuel-burn
 const TRIFORCE_COLLECT_DIST = 36;  // larger pickup radius
-const TRIFORCE_CHANCE     = 0.35;  // chance per chunk
+
+const SHIELD_SCALE        = 2.0;
+const SHIELD_COLLECT_DIST = 28;
 
 // Fuel platform spacing in pixels (1 alt = 8px)
 const FUEL_MIN_EARLY = 560;   // 70 alt × 8px
@@ -42,7 +44,9 @@ export default class WorldGen {
     this._all      = [];
     this._crystals = [];
     this._triforces = [];
-    this._triforceZonesSpawned = new Set(); // track which 500m zones have a triforce
+    this._shields = [];
+    this._triforceZonesSpawned = new Set();
+    this._shieldZonesSpawned = new Set(); // track which 500m zones have a triforce
     this._chunkIdx = 0;
     this._rng      = createRng(seed);
     this._lastFuelY = playerStartY;     // track last fuel platform for consistent spacing
@@ -100,6 +104,13 @@ export default class WorldGen {
         this._triforces.splice(i, 1);
       }
     }
+    // Destroy shields far below
+    for (let i = this._shields.length - 1; i >= 0; i--) {
+      if (this._shields[i].baseY > playerY + 1000) {
+        this._shields[i].sprite.destroy();
+        this._shields.splice(i, 1);
+      }
+    }
   }
 
   // Check if the player is touching any crystal/triforce and collect it
@@ -134,7 +145,20 @@ export default class WorldGen {
       }
     }
 
-    return { points, boost };
+    // Shields
+    let shield = false;
+    for (let i = this._shields.length - 1; i >= 0; i--) {
+      const s = this._shields[i];
+      const dx = playerX - s.sprite.x;
+      const dy = playerY - s.sprite.y;
+      if (dx * dx + dy * dy < SHIELD_COLLECT_DIST * SHIELD_COLLECT_DIST) {
+        shield = true;
+        s.sprite.destroy();
+        this._shields.splice(i, 1);
+      }
+    }
+
+    return { points, boost, shield };
   }
 
   // ── Chunk generation ─────────────────────────────────────────
@@ -215,6 +239,22 @@ export default class WorldGen {
       const tfx = this._randInt(tfMargin, W - tfMargin);
       this._spawnTriforce(tfx, tfy);
       chunkTriforces.push({ x: tfx, y: tfy });
+    }
+
+    // ── Shield: one per 500m zone ──────────────────────────────
+    for (let zone = 0; zone < 5; zone++) {
+      if (this._shieldZonesSpawned.has(zone)) continue;
+      const zoneBase = zone * 500;
+      const shAltMin = zoneBase + 100;
+      const shAltMax = zoneBase + 400;
+      if (botAltChunk > shAltMax || topAltChunk < shAltMin) continue;
+
+      this._shieldZonesSpawned.add(zone);
+      const shAlt = shAltMin + this._rand() * (shAltMax - shAltMin);
+      const shy = Math.round(this._playerStartY - shAlt / ALT_PER_PX);
+      const shMargin = 40;
+      const shx = this._randInt(shMargin, W - shMargin);
+      this._spawnShield(shx, shy);
     }
 
     // ── Crystals: frequency increases with altitude ──
@@ -304,5 +344,25 @@ export default class WorldGen {
     });
 
     this._triforces.push({ container, baseY: y });
+  }
+
+  _spawnShield(x, y) {
+    const sprite = this.scene.add.image(x, y, 'shield_pickup')
+      .setScale(SHIELD_SCALE)
+      .setOrigin(0.5);
+
+    // Gentle bob + pulse
+    this.scene.tweens.add({
+      targets: sprite,
+      y: y - 20,
+      scaleX: SHIELD_SCALE * 1.15,
+      scaleY: SHIELD_SCALE * 1.15,
+      duration: 1100 + Math.floor(this._rand() * 400),
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    this._shields.push({ sprite, baseY: y });
   }
 }

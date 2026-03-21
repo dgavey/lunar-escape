@@ -9,7 +9,11 @@
       "Bash(npx png-js:*)",
       "Bash(npm ls:*)",
       "Bash(npm run:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(ffmpeg -version)",
+      "Bash(done)",
+      "Bash(ffmpeg -i freesound_community-thrusters_loopwav-14699.mp3 -af \"silencedetect=noise=-30dB:d=0.1\" -f null -)",
+      "Bash(ffmpeg -i freesound_community-thrusters_loopwav-14699.mp3 -af \"volumedetect\" -f null -)"
     ]
   }
 }

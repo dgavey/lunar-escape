@@ -87,6 +87,8 @@ export default class Player extends Phaser.GameObjects.Rectangle {
     this._btnStutter = false; // stutter fire: rapid on/off pulses
 
     this.crystalBoostTimer = 0; // seconds remaining of no-fuel-burn boost
+    this.shieldCount = 1;       // start with one shield for testing
+    this.isThrusting = false;   // exposed for sound effects
   }
 
   _computeCentroid(verts) {
@@ -340,6 +342,7 @@ export default class Player extends Phaser.GameObjects.Rectangle {
     if (this.crystalBoostTimer > 0) this.crystalBoostTimer = Math.max(0, this.crystalBoostTimer - dt);
 
     // ── Thrust ─────────────────────────────────────────────────
+    this.isThrusting = thrusting;
     if (thrusting) {
       const rad = this.rotation - Math.PI / 2;
       this.applyForce({

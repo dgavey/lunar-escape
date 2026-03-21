@@ -44,6 +44,11 @@ export default class UIScene extends Phaser.Scene {
       fontSize: '10px', color: '#888888', fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setScrollFactor(0);
 
+    // ── Shield count (top-left, under best score) ─────────────────
+    this._shieldIcons = [];
+    this._shieldIconBaseX = 20;
+    this._shieldIconBaseY = TOP + 58;
+
     // ── Stats ─────────────────────────────────────────────────────
     this.altText   = this.add.text(10, TOP, 'ALT: 0m',  { fontSize: '15px', color: '#ffffff', fontFamily: 'monospace' }).setScrollFactor(0);
     this.scoreText = this.add.text(10, TOP + 18, 'SCORE: 0', { fontSize: '15px', color: '#ffdd00', fontFamily: 'monospace' }).setScrollFactor(0);
@@ -191,6 +196,19 @@ export default class UIScene extends Phaser.Scene {
 
     this.altText.setText(`ALT: ${game.currentAltitude}m / ${2500}m`);
     this.scoreText.setText(`SCORE: ${game.getTotalScore()}`);
+
+    // Shield icons
+    const sc = game.player.shieldCount;
+    while (this._shieldIcons.length < sc) {
+      const i = this._shieldIcons.length;
+      const icon = this.add.image(this._shieldIconBaseX + i * 16, this._shieldIconBaseY, 'shield_pickup')
+        .setScale(0.8)
+        .setScrollFactor(0);
+      this._shieldIcons.push(icon);
+    }
+    while (this._shieldIcons.length > sc) {
+      this._shieldIcons.pop().destroy();
+    }
 
     if (game.launched && this.launchHint.visible) {
       this.launchHint.setVisible(false);

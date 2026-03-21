@@ -2,6 +2,8 @@ import Player from '../objects/Player.js';
 import WorldGen from '../utils/WorldGen.js';
 import AsteroidSpawner from '../utils/AsteroidSpawner.js';
 import AsteroidGlowPipeline from '../shaders/AsteroidGlowPipeline.js';
+import ShieldGlowPipeline from '../shaders/ShieldGlowPipeline.js';
+import CrystalBoostPipeline from '../shaders/CrystalBoostPipeline.js';
 
 const CRASH_VELOCITY = 120;  // px/s = instant crash (lower for moon gravity)
 const DEFAULT_SEED   = 0x3EF20;
@@ -21,34 +23,19 @@ export default class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
-  preload() {
-    this.load.atlas('sprites', 'assets/ships.png', 'assets/spritesheet.json');
-    this.load.spritesheet('star_tiles', 'assets/star_tiles.png', {
-      frameWidth: 16, frameHeight: 16,
-    });
-    this.load.spritesheet('moon_tiles', 'assets/moon_tiles.png', {
-      frameWidth: 16, frameHeight: 16,
-    });
-    this.load.spritesheet('platform_tiles', 'assets/platform_tiles.png', {
-      frameWidth: 16, frameHeight: 8,
-    });
-    this.load.image('crystal', 'assets/crystal.png');
-    this.load.image('asteroid_bg', 'assets/asteroid_bg.png');
-    this.load.image('asteroid_fg', 'assets/asteroid_fg.png');
-    this.load.image('surface_layer1', 'assets/surface_layer1.png');
-    this.load.image('surface_layer2', 'assets/surface_layer2.png');
-    this.load.image('surface_layer3', 'assets/surface_layer3.png');
-    this.load.image('surface_layer4', 'assets/surface_layer4.png');
-    this.load.spritesheet('explosion', 'assets/explosion.png', {
-      frameWidth: 32, frameHeight: 32,
-    });
-  }
-
   create() {
-    // Register asteroid glow shader (idempotent — safe across restarts)
+    // Register shaders (idempotent — safe across restarts)
     const renderer = this.game.renderer;
-    if (renderer?.pipelines && !renderer.pipelines.has('AsteroidGlow')) {
-      renderer.pipelines.addPostPipeline('AsteroidGlow', AsteroidGlowPipeline);
+    if (renderer?.pipelines) {
+      if (!renderer.pipelines.has('AsteroidGlow')) {
+        renderer.pipelines.addPostPipeline('AsteroidGlow', AsteroidGlowPipeline);
+      }
+      if (!renderer.pipelines.has('ShieldGlow')) {
+        renderer.pipelines.addPostPipeline('ShieldGlow', ShieldGlowPipeline);
+      }
+      if (!renderer.pipelines.has('CrystalBoost')) {
+        renderer.pipelines.addPostPipeline('CrystalBoost', CrystalBoostPipeline);
+      }
     }
 
     this.bonusScore    = 0;
@@ -183,7 +170,20 @@ export default class GameScene extends Phaser.Scene {
       }).setOrigin(0.5, 0);
     }
 
+    // ── Sound effects ─────────────────────────────────────────
+    this._sfxPickup = this.sound.add('sfx_pickup', { volume: 0.5 });
+    this._sfxExplosion = this.sound.add('sfx_explosion', { volume: 0.6 });
+    this._sfxThrust = this.sound.add('sfx_thrust', { volume: 0.45, loop: true });
+    this._sfxRefuel = this.sound.add('sfx_refuel', { volume: 0.5 });
+    this._sfxCrystalBoost = this.sound.add('sfx_crystal_boost', { volume: 0.4 });
+    this._crystalBoostPlaying = false;
+    this._thrustPlaying = false;
+    this._thrustFadeTimer = null;
+
     this.scene.launch('UIScene');
+
+    // Apply shield shader if starting with shields
+    if (this.player.shieldCount > 0) this._updateShieldShader();
 
     // ── Debug console commands ───────────────────────────────────
     this._debugGod    = false;
@@ -356,10 +356,11 @@ export default class GameScene extends Phaser.Scene {
   _onCollisionStart(bodyA, bodyB) {
     if (this._gameOver) return;
 
-    // Asteroid hitting the player = game over
+    // Asteroid hitting the player
     const [playerBody, otherBody] = this._getPlayerAndOther(bodyA, bodyB);
     if (playerBody && otherBody.label === 'asteroid') {
       this.asteroidSpawner.destroyOnPlayerHit(otherBody);
+      if (this._consumeShield()) return;
       this._triggerGameOver('asteroid');
       return;
     }
@@ -374,6 +375,7 @@ export default class GameScene extends Phaser.Scene {
     const vy = this.player.prevVelocityY;
     const speed = Math.sqrt(vx * vx + vy * vy);
     if (speed > CRASH_VELOCITY) {
+      if (this._consumeShield()) return;
       this._triggerGameOver('crash');
       return;
     }
@@ -392,6 +394,7 @@ export default class GameScene extends Phaser.Scene {
     // Crash if landing gear not fully deployed (skip before launch)
     // Only trigger on meaningful impacts, not gentle touches
     if (this.launched && !this.player.isGearFullyDeployed() && this.player.prevVelocityY > 50) {
+      if (this._consumeShield()) return;
       this._triggerGameOver('gear');
     }
   }
@@ -417,13 +420,16 @@ export default class GameScene extends Phaser.Scene {
 
     if (platform.platformType === 'fuel') {
       player.fuel = player.maxFuel;
+      this._sfxRefuel.play();
       this._floatText(platform.x, platform.y - 20, 'FULL FUEL', '#00ff66');
       this._floatText(platform.x, platform.y - 44, `+${landingBonus} LANDED`, '#ffdd00');
     } else if (platform.platformType === 'points') {
+      this._sfxPickup.play();
       const pts = platform.pointValue || 500;
       this.bonusScore += pts;
       this._floatText(platform.x, platform.y - 20, `+${pts + landingBonus} LANDED`, '#ffdd00');
     } else {
+      this._sfxPickup.play();
       this._floatText(platform.x, platform.y - 20, `+${landingBonus} LANDED`, '#ffdd00');
     }
   }
@@ -438,6 +444,23 @@ export default class GameScene extends Phaser.Scene {
       targets: t, y: y - 60, alpha: 0, duration: 900,
       onComplete: () => t.destroy(),
     });
+  }
+
+  // ── Web Audio gain ramp (smooth, no per-frame stepping) ──────
+
+  _rampThrustGain(target, duration) {
+    // Use Phaser's Web Audio volumeNode for crackle-free gain ramping
+    const snd = this._sfxThrust;
+    if (snd.volumeNode) {
+      const gain = snd.volumeNode.gain;
+      const ctx = snd.volumeNode.context;
+      gain.cancelScheduledValues(ctx.currentTime);
+      gain.setValueAtTime(gain.value, ctx.currentTime);
+      gain.linearRampToValueAtTime(target, ctx.currentTime + duration);
+    } else {
+      // Fallback for HTML5 audio
+      snd.setVolume(target);
+    }
   }
 
   // ── Landing gear proximity ────────────────────────────────────
@@ -569,17 +592,68 @@ export default class GameScene extends Phaser.Scene {
     // ── Landing gear auto-deploy ────────────────────────────────
     this._updateGearProximity();
 
+    // ── Thrust sound ────────────────────────────────────────────
+    if (this.player.isThrusting && !this._thrustPlaying) {
+      // Cancel any pending fade-out stop
+      if (this._thrustFadeTimer) {
+        this._thrustFadeTimer.remove(false);
+        this._thrustFadeTimer = null;
+      }
+      if (this._sfxThrust.isPlaying) {
+        // Still playing (mid-fade) — just ramp gain back up, no restart
+        this._rampThrustGain(0.45, 0.03);
+      } else {
+        this._sfxThrust.play();
+        this._rampThrustGain(0.45, 0.03);
+      }
+      this._thrustPlaying = true;
+    } else if (!this.player.isThrusting && this._thrustPlaying) {
+      this._thrustPlaying = false;
+      // Smooth fade via Web Audio gain node — no per-frame stepping
+      this._rampThrustGain(0, 0.15);
+      this._thrustFadeTimer = this.time.delayedCall(160, () => {
+        this._sfxThrust.stop();
+        this._thrustFadeTimer = null;
+      });
+    }
+
     // Debug: keep fuel full in god/noclip mode
     if (this._debugGod) this.player.fuel = this.player.maxFuel;
 
-    // Collect crystals / triforces on contact
+    // Collect crystals / triforces / shields on contact
     const pickup = this.worldGen.collectCrystals(this.player.x, this.player.y);
     if (pickup.points > 0) {
+      this._sfxPickup.play();
+      if (pickup.boost >= 10) {
+        // Super crystal (triforce) — play full crystal boost sound
+        this._sfxCrystalBoost.stop();
+        this._sfxCrystalBoost.setVolume(0.4);
+        this._sfxCrystalBoost.play();
+        this._crystalBoostPlaying = true;
+      }
       this.bonusScore += pickup.points;
       this.player.crystalBoostTimer = pickup.boost;
       const color = pickup.boost >= 10 ? '#ffee00' : '#66eeff';
       this._floatText(this.player.x, this.player.y - 30, `+${pickup.points}`, color);
     }
+    if (pickup.shield) {
+      this._sfxPickup.play();
+      this.player.shieldCount++;
+      this._updateShieldShader();
+      this._floatText(this.player.x, this.player.y - 50, 'SHIELD', '#44ff88');
+    }
+
+    // Crystal boost sound fade-out when boost expires
+    if (this.player.crystalBoostTimer <= 0 && this._crystalBoostPlaying) {
+      this._crystalBoostPlaying = false;
+      this.tweens.add({
+        targets: this._sfxCrystalBoost,
+        volume: 0,
+        duration: 200,
+        onComplete: () => this._sfxCrystalBoost.stop(),
+      });
+    }
+    this._updateCrystalBoostShader();
 
     // Collect platform once the ship has settled upright on it
     if (this._landedPlatform && !this._landedPlatform.collected && this.player.isStable()) {
@@ -588,7 +662,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Tipping game over — ship fell past the point of no return
     if (this.player.tippedOut) {
-      this._triggerGameOver('tipped');
+      if (!this._consumeShield()) this._triggerGameOver('tipped');
     }
 
     if (!this.launched && this.altitudeScore > 2) this.launched = true;
@@ -662,6 +736,70 @@ export default class GameScene extends Phaser.Scene {
     return this.altitudeScore + this.bonusScore;
   }
 
+  _consumeShield() {
+    if (this.player.shieldCount <= 0) return false;
+    this.player.shieldCount--;
+    this._updateShieldShader();
+    this._sfxExplosion.play();
+    this._floatText(this.player.x, this.player.y - 50, 'SHIELD BREAK', '#44ff88');
+
+    // Ease velocity to half over 300ms
+    const body = this.player.body;
+    const startVx = body.velocity.x;
+    const startVy = body.velocity.y;
+    const startAv = body.angularVelocity;
+    const Body = Phaser.Physics.Matter.Matter.Body;
+    const startTime = this.time.now;
+    const duration = 300;
+
+    const slowDown = () => {
+      const elapsed = this.time.now - startTime;
+      const p = Math.min(1, elapsed / duration);
+      // Ease out quad
+      const ease = 1 - (1 - p) * (1 - p);
+      const factor = 1 - ease * 0.5; // lerp from 1.0 to 0.5
+      Body.setVelocity(body, {
+        x: startVx * factor,
+        y: startVy * factor,
+      });
+      Body.setAngularVelocity(body, startAv * factor);
+      if (p < 1) this.time.delayedCall(16, slowDown);
+    };
+    slowDown();
+
+    // Reset tipped state so player can recover
+    this.player.tippedOut = false;
+
+    return true;
+  }
+
+  _updateCrystalBoostShader() {
+    if (!this.game.renderer?.pipelines) return;
+    const sprite = this.player.shipSprite;
+    if (!sprite) return;
+    const shouldShow = this.player.crystalBoostTimer > 0;
+    const has = sprite.getPostPipeline && sprite.getPostPipeline('CrystalBoost').length > 0;
+    if (shouldShow && !has) {
+      sprite.setPostPipeline('CrystalBoost');
+    } else if (!shouldShow && has) {
+      sprite.removePostPipeline('CrystalBoost');
+    }
+  }
+
+  _updateShieldShader() {
+    if (!this.game.renderer?.pipelines) return;
+    const targets = [this.player.shipSprite, this.player.gearGfx];
+    const shouldShow = this.player.shieldCount > 0;
+    for (const obj of targets) {
+      if (!obj) continue;
+      // Remove all existing shield pipelines first to avoid duplicates
+      try { obj.removePostPipeline('ShieldGlow'); } catch (e) { /* ok */ }
+      if (shouldShow) {
+        obj.setPostPipeline('ShieldGlow');
+      }
+    }
+  }
+
   _triggerGameOver(reason) {
     if (this._gameOver) return;
     this._gameOver = true;
@@ -672,8 +810,24 @@ export default class GameScene extends Phaser.Scene {
     const hi    = Math.max(total, prev);
     if (total >= prev) localStorage.setItem('lunarClimberHi', String(total));
 
+    // Stop looping sounds on game over
+    if (this._crystalBoostPlaying) {
+      this._sfxCrystalBoost.stop();
+      this._crystalBoostPlaying = false;
+    }
+    if (this._thrustPlaying) {
+      if (this._thrustFadeTimer) {
+        this._thrustFadeTimer.remove(false);
+        this._thrustFadeTimer = null;
+      }
+      this._rampThrustGain(0, 0.1);
+      this.time.delayedCall(110, () => this._sfxThrust.stop());
+      this._thrustPlaying = false;
+    }
+
     const isCrash = ['crash', 'tipped', 'gear', 'asteroid'].includes(reason);
     if (isCrash) {
+      this._sfxExplosion.play();
       // Hide ship and play explosion at its position
       this.player.shipSprite.setVisible(false);
       this.player.flameGfx.setVisible(false);

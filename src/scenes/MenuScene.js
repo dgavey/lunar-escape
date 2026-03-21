@@ -4,30 +4,25 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image('crystal', 'assets/crystal.png');
-    this.load.image('asteroid_fg', 'assets/asteroid_fg.png');
-    this.load.spritesheet('platform_tiles', 'assets/platform_tiles.png', {
-      frameWidth: 16, frameHeight: 8,
-    });
-  }
-
-  create() {
     const { width, height } = this.scale;
     const cx = width / 2;
 
-    // ── Background ──────────────────────────────────────────────
     this.cameras.main.setBackgroundColor('#001020');
 
-    // Subtle starfield
-    for (let i = 0; i < 60; i++) {
-      const sx = Phaser.Math.Between(0, width);
-      const sy = Phaser.Math.Between(0, height);
-      const size = Phaser.Math.Between(1, 2);
-      const alpha = 0.3 + Math.random() * 0.5;
-      this.add.rectangle(sx, sy, size, size, 0xffffff, alpha);
+    // ── Procedural dot stars (visible while assets load) ──────
+    this._preloadStars = [];
+    for (let i = 0; i < 50; i++) {
+      const dot = this.add.rectangle(
+        Phaser.Math.Between(0, width),
+        Phaser.Math.Between(0, height),
+        Phaser.Math.Between(1, 2),
+        Phaser.Math.Between(1, 2),
+        0xffffff, 0.3 + Math.random() * 0.5
+      );
+      this._preloadStars.push(dot);
     }
 
-    // ── Title ───────────────────────────────────────────────────
+    // ── Title (shown during load) ─────────────────────────────
     this.add.text(cx, height * 0.18, 'LUNAR', {
       fontSize: '52px', color: '#ffffff', fontFamily: 'monospace',
       stroke: '#000000', strokeThickness: 4,
@@ -38,12 +33,90 @@ export default class MenuScene extends Phaser.Scene {
       stroke: '#000000', strokeThickness: 4,
     }).setOrigin(0.5);
 
-    // Subtitle
     this.add.text(cx, height * 0.32, 'Fly. Land. Survive.', {
       fontSize: '16px', color: '#888888', fontFamily: 'monospace',
     }).setOrigin(0.5);
 
-    // ── Start button ────────────────────────────────────────────
+    // ── Loading bar ───────────────────────────────────────────
+    const barW = 200;
+    const barH = 8;
+    const barX = cx - barW / 2;
+    const barY = height * 0.50;
+
+    const border = this.add.graphics();
+    border.lineStyle(1, 0x445566, 0.8);
+    border.strokeRect(barX - 1, barY - 1, barW + 2, barH + 2);
+
+    const fill = this.add.graphics();
+
+    this._loadText = this.add.text(cx, barY - 20, 'LOADING...', {
+      fontSize: '14px', color: '#888888', fontFamily: 'monospace',
+    }).setOrigin(0.5);
+
+    this._loadBarElements = [border, fill];
+
+    this.load.on('progress', (pct) => {
+      fill.clear();
+      fill.fillStyle(0x00ddff, 0.8);
+      fill.fillRect(barX, barY, barW * pct, barH);
+    });
+
+    // ── Load all game assets ──────────────────────────────────
+    this.load.atlas('sprites', 'assets/ships.png', 'assets/spritesheet.json');
+    this.load.spritesheet('star_tiles', 'assets/star_tiles.png', {
+      frameWidth: 16, frameHeight: 16,
+    });
+    this.load.spritesheet('moon_tiles', 'assets/moon_tiles.png', {
+      frameWidth: 16, frameHeight: 16,
+    });
+    this.load.spritesheet('platform_tiles', 'assets/platform_tiles.png', {
+      frameWidth: 16, frameHeight: 8,
+    });
+    this.load.image('crystal', 'assets/crystal.png');
+    this.load.image('shield_pickup', 'assets/shield_pickup.png');
+    this.load.image('asteroid_bg', 'assets/asteroid_bg.png');
+    this.load.image('asteroid_fg', 'assets/asteroid_fg.png');
+    this.load.image('surface_layer1', 'assets/surface_layer1.png');
+    this.load.image('surface_layer2', 'assets/surface_layer2.png');
+    this.load.image('surface_layer3', 'assets/surface_layer3.png');
+    this.load.image('surface_layer4', 'assets/surface_layer4.png');
+    this.load.spritesheet('explosion', 'assets/explosion.png', {
+      frameWidth: 32, frameHeight: 32,
+    });
+
+    // Sound effects
+    this.load.audio('sfx_pickup', 'assets/sounds/pickup.mp3');
+    this.load.audio('sfx_explosion', 'assets/sounds/explosion.mp3');
+    this.load.audio('sfx_thrust', ['assets/sounds/thrust.ogg', 'assets/sounds/thrust.mp3']);
+    this.load.audio('sfx_refuel', 'assets/sounds/refuel.mp3');
+    this.load.audio('sfx_crystal_boost', 'assets/sounds/crystal_boost.mp3');
+  }
+
+  create() {
+    const { width, height } = this.scale;
+    const cx = width / 2;
+
+    // ── Replace dot stars with star_tiles ──────────────────────
+    for (const dot of this._preloadStars) dot.destroy();
+    this._preloadStars = null;
+
+    for (let i = 0; i < 50; i++) {
+      const frame = Phaser.Math.Between(0, 6);
+      const scale = Phaser.Math.FloatBetween(1.5, 3);
+      this.add.image(
+        Phaser.Math.Between(0, width),
+        Phaser.Math.Between(0, height),
+        'star_tiles', frame
+      ).setScale(scale).setOrigin(0.5).setAlpha(Phaser.Math.FloatBetween(0.4, 1))
+        .setDepth(-1);
+    }
+
+    // ── Remove loading bar, show buttons ──────────────────────
+    for (const el of this._loadBarElements) el.destroy();
+    this._loadBarElements = null;
+    this._loadText.destroy();
+
+    // ── Start button ──────────────────────────────────────────
     const startBtn = this.add.text(cx, height * 0.50, '[ START ]', {
       fontSize: '28px', color: '#ffffff', fontFamily: 'monospace',
       backgroundColor: '#224444', padding: { x: 20, y: 10 },
@@ -55,7 +128,7 @@ export default class MenuScene extends Phaser.Scene {
     startBtn.on('pointerout', () => startBtn.setColor('#ffffff'));
     startBtn.on('pointerdown', () => this._startGame());
 
-    // ── How to Play button ──────────────────────────────────────
+    // ── How to Play button ────────────────────────────────────
     const helpBtn = this.add.text(cx, height * 0.60, '[ HOW TO PLAY ]', {
       fontSize: '18px', color: '#aaaaaa', fontFamily: 'monospace',
       padding: { x: 10, y: 6 },
@@ -65,7 +138,7 @@ export default class MenuScene extends Phaser.Scene {
     helpBtn.on('pointerout', () => helpBtn.setColor('#aaaaaa'));
     helpBtn.on('pointerdown', () => this._showInstructions());
 
-    // ── High score ──────────────────────────────────────────────
+    // ── High score ────────────────────────────────────────────
     const hi = localStorage.getItem('lunarClimberHi') || '0';
     if (parseInt(hi) > 0) {
       this.add.text(cx, height * 0.70, `BEST: ${hi}`, {
@@ -73,7 +146,7 @@ export default class MenuScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    // ── Keyboard shortcut ───────────────────────────────────────
+    // ── Keyboard shortcut ─────────────────────────────────────
     this.input.keyboard.once('keydown-SPACE', () => this._startGame());
 
     // Track instruction overlay elements for cleanup
@@ -93,14 +166,25 @@ export default class MenuScene extends Phaser.Scene {
     const els = this._instructionElements;
 
     // Overlay background
-    els.push(this.add.rectangle(cx, height / 2, width, height, 0x000000, 0.92));
+    els.push(this.add.rectangle(cx, height / 2, width, height, 0x001020, 0.95));
+
+    // Stars behind help content
+    for (let i = 0; i < 40; i++) {
+      const frame = Phaser.Math.Between(0, 6);
+      const scale = Phaser.Math.FloatBetween(1.5, 3);
+      els.push(this.add.image(
+        Phaser.Math.Between(0, width),
+        Phaser.Math.Between(0, height),
+        'star_tiles', frame
+      ).setScale(scale).setOrigin(0.5).setAlpha(Phaser.Math.FloatBetween(0.3, 0.7)));
+    }
 
     // Title
     els.push(this.add.text(cx, height * 0.06, 'HOW TO PLAY', {
       fontSize: '24px', color: '#00ddff', fontFamily: 'monospace',
     }).setOrigin(0.5));
 
-    // ── Instructions with sprites ───────────────────────────────
+    // ── Instructions with sprites ─────────────────────────────
     const SPRITE_X = 38;
     const TEXT_X = 75;
     let y = height * 0.14;
@@ -139,9 +223,16 @@ export default class MenuScene extends Phaser.Scene {
     els.push(this.add.text(TEXT_X, y, 'Avoid asteroids! They get\nfaster and more frequent\nas you climb higher.', {
       fontSize: '12px', color: '#cccccc', fontFamily: 'monospace', lineSpacing: 4,
     }));
-    y += 75;
+    y += 70;
 
-    // ── Controls section ────────────────────────────────────────
+    // SHIELD — shield sprite
+    els.push(this.add.image(SPRITE_X, y + 10, 'shield_pickup').setScale(2.5));
+    els.push(this.add.text(TEXT_X, y, 'Shields absorb one hit.\nCollect multiples to\nstack protection.', {
+      fontSize: '12px', color: '#cccccc', fontFamily: 'monospace', lineSpacing: 4,
+    }));
+    y += 70;
+
+    // ── Controls section ──────────────────────────────────────
     els.push(this.add.text(cx, y, 'CONTROLS', {
       fontSize: '16px', color: '#00ddff', fontFamily: 'monospace',
     }).setOrigin(0.5));
