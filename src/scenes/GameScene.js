@@ -38,6 +38,9 @@ export default class GameScene extends Phaser.Scene {
     this.load.image('surface_layer2', 'assets/surface_layer2.png');
     this.load.image('surface_layer3', 'assets/surface_layer3.png');
     this.load.image('surface_layer4', 'assets/surface_layer4.png');
+    this.load.spritesheet('explosion', 'assets/explosion.png', {
+      frameWidth: 32, frameHeight: 32,
+    });
   }
 
   create() {
@@ -144,6 +147,14 @@ export default class GameScene extends Phaser.Scene {
     this._zoneOverlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0)
       .setScrollFactor(0)
       .setDepth(-5);
+
+    // ── Explosion animation ────────────────────────────────────
+    this.anims.create({
+      key: 'explode',
+      frames: this.anims.generateFrameNumbers('explosion', { start: 0, end: 7 }),
+      frameRate: 16,
+      repeat: 0,
+    });
 
     // ── Zone boundary markers in world space ──────────────────
     for (let i = 1; i < ZONES.length; i++) {
@@ -350,6 +361,15 @@ export default class GameScene extends Phaser.Scene {
     const isGround = otherBody.label === 'ground' || otherBody.label === 'platform';
     if (!isGround) return;
 
+    // Crash check for any high-speed impact (top, bottom, or side)
+    const vx = this.player.body.velocity.x * 60;
+    const vy = this.player.prevVelocityY;
+    const speed = Math.sqrt(vx * vx + vy * vy);
+    if (speed > CRASH_VELOCITY) {
+      this._triggerGameOver('crash');
+      return;
+    }
+
     // Only count as ground contact if player is above the surface
     if (playerBody.position.y >= otherBody.position.y) return;
 
@@ -359,11 +379,6 @@ export default class GameScene extends Phaser.Scene {
     const otherObj = otherBody.gameObject;
     if (otherObj?.platformType) {
       this._landedPlatform = otherObj;
-    }
-
-    // Crash check — use pre-collision velocity
-    if (this.player.prevVelocityY > CRASH_VELOCITY) {
-      this._triggerGameOver('crash');
     }
 
     // Crash if landing gear not fully deployed (skip before launch)
@@ -627,6 +642,25 @@ export default class GameScene extends Phaser.Scene {
     const hi    = Math.max(total, prev);
     if (total >= prev) localStorage.setItem('lunarClimberHi', String(total));
 
-    this.events.emit('gameover', total, hi, reason);
+    const isCrash = ['crash', 'tipped', 'gear', 'asteroid'].includes(reason);
+    if (isCrash) {
+      // Hide ship and play explosion at its position
+      this.player.shipSprite.setVisible(false);
+      this.player.flameGfx.setVisible(false);
+      this.player.gearGfx.setVisible(false);
+
+      const boom = this.add.sprite(this.player.x, this.player.y, 'explosion')
+        .setScale(3)
+        .setDepth(10);
+      boom.play('explode');
+      boom.on('animationcomplete', () => boom.destroy());
+
+      // Show end screen after explosion finishes
+      this.time.delayedCall(1000, () => {
+        this.events.emit('gameover', total, hi, reason);
+      });
+    } else {
+      this.events.emit('gameover', total, hi, reason);
+    }
   }
 }
