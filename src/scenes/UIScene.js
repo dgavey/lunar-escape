@@ -2,12 +2,12 @@
 // Two buttons across the bottom: [ROT L] [ROT R]
 // Thrust = both pressed simultaneously
 const BTN_H      = 60;    // height
-const BTN_PAD    = 36;    // padding from bottom/sides (clears iOS home indicator)
-const BTN_Y      = 844 - BTN_H - BTN_PAD; // top edge of buttons
-const BTN_GAP    = 10;    // gap between buttons
-const BTN_W      = (390 - BTN_PAD * 2 - BTN_GAP) / 2; // each button width
-const BTN_LEFT   = { x: BTN_PAD, w: BTN_W };
-const BTN_RIGHT  = { x: BTN_PAD + BTN_W + BTN_GAP, w: BTN_W };
+const BTN_PAD_Y  = 86;    // padding from bottom (clears iOS home indicator + browser chrome)
+const BTN_Y      = 844 - BTN_H - BTN_PAD_Y; // top edge of buttons
+const BTN_W      = 120;   // button width
+const HALF_W     = 390 / 2; // center of each half
+const BTN_LEFT   = { x: HALF_W / 2 - BTN_W / 2, w: BTN_W };           // centered in left half
+const BTN_RIGHT  = { x: HALF_W + HALF_W / 2 - BTN_W / 2, w: BTN_W };  // centered in right half
 
 function hits(ptr, btn) {
   return ptr.x >= btn.x && ptr.x <= btn.x + btn.w &&

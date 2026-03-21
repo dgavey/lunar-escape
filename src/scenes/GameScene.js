@@ -352,9 +352,8 @@ export default class GameScene extends Phaser.Scene {
   _collectPlatform(player, platform) {
     platform.setCollected();
     if (platform.platformType === 'fuel') {
-      const amt = platform.fuelAmount || 35;
-      player.addFuel(amt);
-      this._floatText(platform.x, platform.y - 20, `+${amt} FUEL`, '#00ff66');
+      player.fuel = player.maxFuel;
+      this._floatText(platform.x, platform.y - 20, 'FULL FUEL', '#00ff66');
     } else if (platform.platformType === 'points') {
       const pts = platform.pointValue || 500;
       this.bonusScore += pts;
@@ -481,10 +480,15 @@ export default class GameScene extends Phaser.Scene {
       this.cameras.main.scrollY += (target - this.cameras.main.scrollY) * 0.1;
     }
 
-    // Game over when player falls off the bottom of the camera view
+    // Game over 1.5s after running out of fuel
     if (this.player.fuel <= 0 && this.launched) {
-      const camBottom = this.cameras.main.scrollY + this.cameras.main.height;
-      if (this.player.y > camBottom + 80) this._triggerGameOver('fuel');
+      if (!this._fuelEmptyTime) {
+        this._fuelEmptyTime = this.time.now;
+      } else if (this.time.now - this._fuelEmptyTime >= 1500) {
+        this._triggerGameOver('fuel');
+      }
+    } else {
+      this._fuelEmptyTime = null;
     }
 
     // Debug: draw physics body wireframes

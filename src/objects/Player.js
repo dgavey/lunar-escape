@@ -96,9 +96,9 @@ export default class Player extends Phaser.GameObjects.Rectangle {
     // Interpolate leg collision shapes between retracted (flush with hull) and deployed.
     // Scaled to 80% of original to match the shortened visual gear.
     const S = 0.8; // scale factor matching visual gear reduction
-    const outerXL = -7.5 + (-10.5 * S) * t;  // left outer x
-    const outerXR =  7.5 + ( 10.5 * S) * t;  // right outer x
-    const botY    = 15 + (12 * S) * t;        // bottom y for both legs
+    const outerXL = -12 + (-10.5 * S) * t;  // left outer x
+    const outerXR =  12 + ( 10.5 * S) * t;  // right outer x
+    const botY    = 12 + (12 * S) * t;        // bottom y for both legs
     return {
       left: [
         { x: outerXL, y: botY },                               // outer-bottom (foot)
@@ -137,19 +137,22 @@ export default class Player extends Phaser.GameObjects.Rectangle {
       const leftLeg  = Bodies.fromVertices(x, y, [legs.left], physOpts);
       const rightLeg = Bodies.fromVertices(x, y, [legs.right], physOpts);
 
-      const llC = this._computeCentroid(legs.left);
-      const rlC = this._computeCentroid(legs.right);
+      // fromVertices can return undefined if the shape is too small/degenerate
+      if (leftLeg && rightLeg) {
+        const llC = this._computeCentroid(legs.left);
+        const rlC = this._computeCentroid(legs.right);
 
-      Body.setPosition(leftLeg, {
-        x: hull.position.x + (llC.x - hullCentroid.x),
-        y: hull.position.y + (llC.y - hullCentroid.y),
-      });
-      Body.setPosition(rightLeg, {
-        x: hull.position.x + (rlC.x - hullCentroid.x),
-        y: hull.position.y + (rlC.y - hullCentroid.y),
-      });
+        Body.setPosition(leftLeg, {
+          x: hull.position.x + (llC.x - hullCentroid.x),
+          y: hull.position.y + (llC.y - hullCentroid.y),
+        });
+        Body.setPosition(rightLeg, {
+          x: hull.position.x + (rlC.x - hullCentroid.x),
+          y: hull.position.y + (rlC.y - hullCentroid.y),
+        });
 
-      parts.push(leftLeg, rightLeg);
+        parts.push(leftLeg, rightLeg);
+      }
     }
 
     const landerBody = Body.create({ parts, ...physOpts });
@@ -244,7 +247,7 @@ export default class Player extends Phaser.GameObjects.Rectangle {
 
     // Foot targets — match collision body feet (in world pixels from sprite center)
     // Collision feet at t=1: y = (15 + 12*0.8) - HULL_MID_Y = 24.6 + 2 = 26.6
-    const targetFootY = 27;
+    const targetFootY = 20;
     const footOuterL = -16;
     const footOuterR =  16;
     const footLX = hingeXL + (footOuterL - hingeXL) * t;

@@ -21,6 +21,12 @@ const CRYSTAL_SCALE   = 1.5;
 const CRYSTAL_POINTS  = 100;
 const CRYSTAL_COLLECT_DIST = 24; // pickup radius in pixels
 
+// Fuel platform spacing in pixels (1 alt = 8px)
+const FUEL_MIN_EARLY = 560;   // 70 alt × 8px
+const FUEL_MAX_EARLY = 640;   // 80 alt × 8px
+const FUEL_MIN_LATE  = 1280;  // 160 alt × 8px
+const FUEL_MAX_LATE  = 1360;  // 170 alt × 8px
+
 export default class WorldGen {
   constructor(scene, playerStartY, seed) {
     this.scene     = scene;
@@ -30,14 +36,8 @@ export default class WorldGen {
     this._crystals = [];
     this._chunkIdx = 0;
     this._rng      = createRng(seed);
-
-    // Rough fuel cost to traverse one chunk straight up from rest:
-    //   d = ½·a·t²  →  t = √(2d/a)  →  fuel = burnRate · t
-    // Net upward accel (pointing straight up) = thrust - gravity
-    const netAccel = THRUST_POWER - GRAVITY; // 180
-    this.baseFuelPerChunk = Math.ceil(
-      FUEL_BURN * Math.sqrt(2 * this.chunkHeight / netAccel)
-    ); // ≈ 31
+    this._lastFuelY = playerStartY;     // track last fuel platform for consistent spacing
+    this._nextFuelDist = 0;             // distance until next fuel platform (set on first chunk)
   }
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -98,32 +98,29 @@ export default class WorldGen {
   _generateChunk() {
     const idx  = this._chunkIdx++;
     const topY = this.highestY - this.chunkHeight;
+    const botY = this.highestY;
     const W    = this.scene.scale.width; // 390
     const t    = this._difficulty();
 
     // ── Scaling ──────────────────────────────────────────────
     const widthMult = 4.0 - t * 2.5;                     // 4x → 1.5x player width
-    const fuelMult  = 3.0 - t * 1.8;                     // 3x → 1.2x safety margin
-    const pointBase = Math.round(500 * (4 / widthMult));  // 500 → ~1333
-
     const platWidth = Math.round(PLAYER_W * widthMult);
-
-    // ── Layout: 1 fuel platform per chunk ──
     const margin = Math.floor(platWidth / 2) + 10;
 
-    // Still consume RNG calls to keep seed determinism for future additions
-    const count    = this._randInt(3, 4);
-    const fuelSlot = this._randInt(0, count - 1);
-    const slotH    = this.chunkHeight / count;
+    // ── Fuel platforms: consistent vertical spacing ──────────
+    // Spacing ramps from 560-640px (70-80 alt) to 1280-1360px (160-170 alt)
+    // Place fuel platforms when distance from last one exceeds threshold
+    if (this._nextFuelDist <= 0) {
+      const minDist = FUEL_MIN_EARLY + (FUEL_MIN_LATE - FUEL_MIN_EARLY) * t;
+      const maxDist = FUEL_MAX_EARLY + (FUEL_MAX_LATE - FUEL_MAX_EARLY) * t;
+      this._nextFuelDist = Math.round(minDist + this._rand() * (maxDist - minDist));
+    }
 
-    for (let i = 0; i < count; i++) {
-      const y = Math.round(
-        topY + slotH * i + slotH * 0.25 + this._rand() * slotH * 0.5
-      );
+    // Check if a fuel platform falls within this chunk
+    const fuelTargetY = this._lastFuelY - this._nextFuelDist;
+    if (fuelTargetY >= topY && fuelTargetY < botY) {
       const x = this._randInt(margin, W - margin);
-
-      // Only generate the fuel platform, skip points slots
-      if (i !== fuelSlot) continue;
+      const y = Math.round(fuelTargetY + (this._rand() - 0.5) * 40); // small jitter
 
       const p = new Platform(this.scene, x, y, platWidth, 'fuel');
       this.scene.add.existing(p);
@@ -132,9 +129,10 @@ export default class WorldGen {
         label: 'platform',
         friction: 0.8,
       });
-
-      p.fuelAmount = Math.round(this.baseFuelPerChunk * fuelMult);
       this._all.push(p);
+
+      this._lastFuelY = y;
+      this._nextFuelDist = 0; // will recalculate on next chunk
     }
 
     // ── Crystals: frequency increases with altitude ──
@@ -146,6 +144,8 @@ export default class WorldGen {
     const crystalCount = this._randInt(1, 2 + Math.floor(t * 4)); // 1-2 early → 3-6 late
     const crystalMargin = 20;
     const MIN_PLAT_DIST = 60; // min distance from any platform edge
+    const MIN_CRYSTAL_DIST = 80; // min distance between crystals
+    const chunkCrystals = [];
     for (let i = 0; i < crystalCount; i++) {
       const cy = Math.round(topY + this._rand() * this.chunkHeight);
       const cx = this._randInt(crystalMargin, W - crystalMargin);
@@ -158,6 +158,15 @@ export default class WorldGen {
       });
       if (tooClose) continue;
 
+      // Skip if too close to another crystal in this chunk
+      const tooCloseToOther = chunkCrystals.some(c => {
+        const dx = cx - c.x;
+        const dy = cy - c.y;
+        return dx * dx + dy * dy < MIN_CRYSTAL_DIST * MIN_CRYSTAL_DIST;
+      });
+      if (tooCloseToOther) continue;
+
+      chunkCrystals.push({ x: cx, y: cy });
       this._spawnCrystal(cx, cy);
     }
 
