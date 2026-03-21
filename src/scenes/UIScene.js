@@ -2,17 +2,17 @@
 // Left side: two rotation buttons side by side [<< | >>]
 // Right side: two thrust buttons side by side [HALF | FULL], connected
 const BTN_PAD_Y   = 86;    // padding from bottom (clears iOS home indicator + browser chrome)
-const BTN_H       = 60;
+const BTN_H       = 72;
 const BTN_Y       = 844 - BTN_H - BTN_PAD_Y;
 const GAP         = 8;     // gap between left buttons
 
 // Left rotation buttons
-const ROT_W       = 70;
+const ROT_W       = 84;
 const ROT_LEFT_X  = 20;
 const ROT_RIGHT_X = ROT_LEFT_X + ROT_W + GAP;
 
 // Right thrust buttons (connected, no gap)
-const THRUST_BTN_W = 65;
+const THRUST_BTN_W = 78;
 const THRUST_FULL_X  = 390 - 20 - THRUST_BTN_W;           // FULL on the right
 const THRUST_HALF_X  = THRUST_FULL_X - THRUST_BTN_W;      // HALF on the left
 
