@@ -4,6 +4,16 @@ import AsteroidSpawner from '../utils/AsteroidSpawner.js';
 
 const CRASH_VELOCITY = 120;  // px/s = instant crash (lower for moon gravity)
 const DEFAULT_SEED   = 0x3EF20;
+const WIN_ALT        = 2500;
+
+// Atmosphere zones — visual layers the player ascends through
+const ZONES = [
+  { name: 'SURFACE',       alt: 0,    color: null,     alpha: 0 },
+  { name: 'LITHOSPHERE',   alt: 500,  color: 0x001133, alpha: 0.2 },
+  { name: 'STELASPHERE',   alt: 1000, color: 0x110033, alpha: 0.3 },
+  { name: 'HELIOSPHERE',   alt: 1500, color: 0x220011, alpha: 0.35 },
+  { name: 'EXOSPHERE',     alt: 2000, color: 0x000000, alpha: 0.4 },
+];
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
@@ -36,6 +46,9 @@ export default class GameScene extends Phaser.Scene {
     this._gameOver     = false;
     this.launched      = false;
     this._landedPlatform = null;
+    this._currentZone  = 0;
+    this._zoneOverlay  = null;
+    this._zoneLabel    = null;
 
     this._createStars();
 
@@ -77,21 +90,21 @@ export default class GameScene extends Phaser.Scene {
     });
 
     // ── Player (sits on top of launch pad) ─────────────────────
-    // Create player first, then position based on actual body offset
+    // Create player first, deploy gear, then position based on actual body offset
     this.player = new Player(this, playerX, 0);
-    // Body bottom in vertex coords is FOOT_BOT_Y (27).
-    // Body centroid offset is stored in _bodyOffsetY.
+    // Deploy gear before positioning so the body includes legs
+    this.player.gearProgress = 1;
+    this.player.gearDeployed = true;
+    this.player.gearTarget = true;
+    this.player._lastBodyGearT = -1; // force rebuild with legs
+    this.player._buildAndSetBody(playerX, 0, 1);
+    // Now position: body bottom (feet) in vertex coords depends on gear collision shape
     const feetBelowCenter = 27 - this.player._bodyOffsetY;
-    this._startY = padSurfaceY - 2 - feetBelowCenter;
-    // Reposition the body to the correct start Y
+    this._startY = padSurfaceY + 5 - feetBelowCenter;
     const MBody = Phaser.Physics.Matter.Matter.Body;
     MBody.setPosition(this.player.body, { x: playerX, y: this._startY });
     this.player.x = playerX;
     this.player.y = this._startY;
-    // Start with gear deployed (sitting on pad)
-    this.player.gearProgress = 1;
-    this.player.gearDeployed = true;
-    this.player.gearTarget = true;
 
     // ── Platforms (seeded world) ─────────────────────────────────
     this.worldSeed = window._pendingSeed ?? DEFAULT_SEED;
@@ -126,6 +139,30 @@ export default class GameScene extends Phaser.Scene {
     // ── Camera ──────────────────────────────────────────────────
     this.cameras.main.scrollX = 0;
     this.cameras.main.scrollY = this._startY - (this.scale.height - 220);
+
+    // ── Zone overlay (tinted full-screen rect, follows camera) ──
+    this._zoneOverlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0)
+      .setScrollFactor(0)
+      .setDepth(-5);
+
+    // ── Zone boundary markers in world space ──────────────────
+    for (let i = 1; i < ZONES.length; i++) {
+      const zoneY = this._startY - ZONES[i].alt * 8;
+      // Dashed line across screen
+      const lineGfx = this.add.graphics();
+      lineGfx.lineStyle(1, 0x4466aa, 0.4);
+      for (let dx = 0; dx < W; dx += 12) {
+        lineGfx.beginPath();
+        lineGfx.moveTo(dx, zoneY);
+        lineGfx.lineTo(dx + 6, zoneY);
+        lineGfx.strokePath();
+      }
+      // Zone name label at boundary
+      this.add.text(W / 2, zoneY + 8, `── ${ZONES[i].name} ──`, {
+        fontSize: '12px', color: '#4466aa', fontFamily: 'monospace',
+        alpha: 0.6,
+      }).setOrigin(0.5, 0);
+    }
 
     this.scene.launch('UIScene');
 
@@ -426,6 +463,45 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── Zone management ──────────────────────────────────────────
+
+  _updateZone() {
+    // Determine which zone the player is in
+    let zoneIdx = 0;
+    for (let i = ZONES.length - 1; i >= 0; i--) {
+      if (this.altitudeScore >= ZONES[i].alt) {
+        zoneIdx = i;
+        break;
+      }
+    }
+
+    if (zoneIdx !== this._currentZone) {
+      this._currentZone = zoneIdx;
+      const zone = ZONES[zoneIdx];
+
+      // Update overlay tint
+      if (zone.color !== null) {
+        this._zoneOverlay.setFillStyle(zone.color, zone.alpha);
+      } else {
+        this._zoneOverlay.setFillStyle(0x000000, 0);
+      }
+
+      // Announce zone entry
+      if (zoneIdx > 0) {
+        this.events.emit('zone', zone.name);
+        const W = this.scale.width;
+        const txt = this.add.text(W / 2, this.player.y - 60, zone.name, {
+          fontSize: '28px', color: '#88aaff', fontFamily: 'monospace',
+          stroke: '#000000', strokeThickness: 4,
+        }).setOrigin(0.5).setDepth(10);
+        this.tweens.add({
+          targets: txt, alpha: 0, y: txt.y - 80, duration: 2000,
+          onComplete: () => txt.destroy(),
+        });
+      }
+    }
+  }
+
   // ── Main update ───────────────────────────────────────────────
 
   update(time, delta) {
@@ -471,6 +547,15 @@ export default class GameScene extends Phaser.Scene {
     }
 
     if (!this.launched && this.altitudeScore > 2) this.launched = true;
+
+    // ── Zone transitions ──────────────────────────────────────
+    this._updateZone();
+
+    // ── Win condition ─────────────────────────────────────────
+    if (this.altitudeScore >= WIN_ALT) {
+      this._triggerGameOver('escaped');
+      return;
+    }
 
     // Camera: scroll up once the ship rises above the mid-point of the screen
     const FOLLOW_SCREEN_Y = this.scale.height * 0.5;

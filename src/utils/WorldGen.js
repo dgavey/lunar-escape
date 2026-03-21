@@ -12,9 +12,6 @@ function createRng(seed) {
 }
 
 // Physics constants (mirrored from Player / main config)
-const THRUST_POWER  = 380;
-const GRAVITY       = 200;
-const FUEL_BURN     = 14;   // units / sec while thrusting
 const PLAYER_W      = 26;
 
 const CRYSTAL_SCALE   = 1.5;
@@ -27,6 +24,11 @@ const FUEL_MAX_EARLY = 640;   // 80 alt × 8px
 const FUEL_MIN_LATE  = 1280;  // 160 alt × 8px
 const FUEL_MAX_LATE  = 1360;  // 170 alt × 8px
 
+// Atmosphere zones — each 500m (4000px)
+const ALT_PER_PX = 1 / 8;   // 1 alt meter = 8 pixels
+const MAX_ALT    = 2500;     // game ends here
+const MAX_PX     = MAX_ALT / ALT_PER_PX; // 20000px of world height
+
 export default class WorldGen {
   constructor(scene, playerStartY, seed) {
     this.scene     = scene;
@@ -38,6 +40,8 @@ export default class WorldGen {
     this._rng      = createRng(seed);
     this._lastFuelY = playerStartY;     // track last fuel platform for consistent spacing
     this._nextFuelDist = 0;             // distance until next fuel platform (set on first chunk)
+    this._playerStartY = playerStartY;
+    this._reachedTop = false;           // true once we've generated up to MAX_ALT
   }
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -45,9 +49,16 @@ export default class WorldGen {
   _rand()              { return this._rng(); }
   _randInt(min, max)   { return min + Math.floor(this._rng() * (max - min + 1)); }
 
-  // Difficulty factor 0..1 that ramps over ~25 chunks
-  _difficulty() {
-    return Math.min(1, this._chunkIdx / 25);
+  // Altitude in meters at a given world Y position
+  _altAtY(y) {
+    return (this._playerStartY - y) * ALT_PER_PX;
+  }
+
+  // Difficulty factor 0..1 based on altitude (ramps across 5 zones, 0-2500m)
+  _difficultyAtY(y) {
+    const alt = this._altAtY(y);
+    // 0-500m = base difficulty (0), ramps to 1.0 at 2500m
+    return Math.min(1, Math.max(0, (alt - 500) / 2000));
   }
 
   // ── Public API ───────────────────────────────────────────────
@@ -57,8 +68,8 @@ export default class WorldGen {
   }
 
   update(playerY) {
-    // Generate ahead
-    while (playerY < this.highestY + this.chunkHeight * 4) {
+    // Generate ahead (but stop at max altitude)
+    while (!this._reachedTop && playerY < this.highestY + this.chunkHeight * 4) {
       this._generateChunk();
     }
     // Destroy platforms far below
@@ -100,16 +111,26 @@ export default class WorldGen {
     const topY = this.highestY - this.chunkHeight;
     const botY = this.highestY;
     const W    = this.scene.scale.width; // 390
-    const t    = this._difficulty();
+
+    // Stop generating beyond max altitude
+    const topAlt = this._altAtY(topY);
+    if (topAlt >= MAX_ALT) {
+      this._reachedTop = true;
+      this.highestY = topY;
+      return;
+    }
+
+    // Use difficulty at the midpoint of this chunk
+    const midY = (topY + botY) / 2;
+    const t    = this._difficultyAtY(midY);
 
     // ── Scaling ──────────────────────────────────────────────
-    const widthMult = 4.0 - t * 2.5;                     // 4x → 1.5x player width
+    const widthMult = 4.0 - t * 2.0;                     // 4x → 2x player width (100% → 50%)
     const platWidth = Math.round(PLAYER_W * widthMult);
     const margin = Math.floor(platWidth / 2) + 10;
 
     // ── Fuel platforms: consistent vertical spacing ──────────
     // Spacing ramps from 560-640px (70-80 alt) to 1280-1360px (160-170 alt)
-    // Place fuel platforms when distance from last one exceeds threshold
     if (this._nextFuelDist <= 0) {
       const minDist = FUEL_MIN_EARLY + (FUEL_MIN_LATE - FUEL_MIN_EARLY) * t;
       const maxDist = FUEL_MAX_EARLY + (FUEL_MAX_LATE - FUEL_MAX_EARLY) * t;
@@ -136,7 +157,6 @@ export default class WorldGen {
     }
 
     // ── Crystals: frequency increases with altitude ──
-    // Collect platform positions in this chunk to keep crystals away from them
     const platPositions = this._all
       .filter(p => p.y >= topY && p.y <= topY + this.chunkHeight)
       .map(p => ({ x: p.x, y: p.y, hw: p.width / 2 }));

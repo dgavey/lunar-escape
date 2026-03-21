@@ -26,13 +26,20 @@ export default class UIScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
 
-    // ── Fuel bar ──────────────────────────────────────────────────
+    // ── Fuel bar (vertical, top-right) ─────────────────────────────
     const TOP = 40; // inset from top edge
-    this.add.rectangle(width / 2, TOP + 14, 202, 18, 0x222222).setOrigin(0.5).setScrollFactor(0);
-    this.fuelFill = this.add.rectangle(width / 2 - 100, TOP + 5, 200, 16, 0x00ff44)
-      .setOrigin(0, 0).setScrollFactor(0);
-    this.add.text(width / 2, TOP + 26, 'FUEL', {
-      fontSize: '11px', color: '#888888', fontFamily: 'monospace',
+    const FUEL_W = 10;          // bar width
+    const FUEL_H = 105;         // bar height
+    const FUEL_X = width - 18;  // right edge inset
+    const FUEL_Y = TOP;         // top of bar
+    this.add.rectangle(FUEL_X, FUEL_Y + FUEL_H / 2, FUEL_W + 2, FUEL_H + 2, 0x222222, 0.6)
+      .setOrigin(0.5).setScrollFactor(0);
+    this.fuelFill = this.add.rectangle(FUEL_X, FUEL_Y, FUEL_W, FUEL_H, 0x00ff44, 0.75)
+      .setOrigin(0.5, 0).setScrollFactor(0);
+    this._fuelMaxH = FUEL_H;
+    this._fuelY = FUEL_Y;
+    this.add.text(FUEL_X, FUEL_Y + FUEL_H + 6, 'F', {
+      fontSize: '10px', color: '#888888', fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setScrollFactor(0);
 
     // ── Stats ─────────────────────────────────────────────────────
@@ -124,10 +131,13 @@ export default class UIScene extends Phaser.Scene {
     if (!game?.player) return;
 
     const pct = Phaser.Math.Clamp(game.player.fuel / game.player.maxFuel, 0, 1);
-    this.fuelFill.width = 200 * pct;
+    const empty = this._fuelMaxH * (1 - pct);
+    this.fuelFill.y = this._fuelY + empty;
+    this.fuelFill.height = this._fuelMaxH * pct;
     this.fuelFill.fillColor = pct > 0.3 ? 0x00ff44 : 0xff4400;
+    this.fuelFill.setAlpha(pct > 0.3 ? 0.75 : 0.85);
 
-    this.altText.setText(`ALT: ${game.altitudeScore}m`);
+    this.altText.setText(`ALT: ${game.altitudeScore}m / ${2500}m`);
     this.scoreText.setText(`SCORE: ${game.getTotalScore()}`);
 
     if (game.launched && this.launchHint.visible) {
@@ -142,13 +152,16 @@ export default class UIScene extends Phaser.Scene {
 
     this.add.rectangle(cx, cy, width, height, 0x000000, 0.75).setScrollFactor(0);
 
-    const title = reason === 'crash'    ? 'CRASHED!'
+    const isWin = reason === 'escaped';
+    const title = reason === 'escaped'  ? 'ESCAPED!'
+                : reason === 'crash'    ? 'CRASHED!'
                 : reason === 'tipped'  ? 'TIPPED OVER!'
                 : reason === 'slid'    ? 'SLID OFF!'
                 : reason === 'asteroid' ? 'HIT BY ASTEROID!'
-                : reason === 'gear'    ? 'GEAR NOT DEPLOYED!'
+                : reason === 'gear'    ? 'CRASHED!'
                 : 'OUT OF FUEL';
-    const color = (reason === 'crash' || reason === 'tipped' || reason === 'slid' || reason === 'asteroid' || reason === 'gear')
+    const color = isWin ? '#00ffaa'
+                : (reason === 'crash' || reason === 'tipped' || reason === 'slid' || reason === 'asteroid' || reason === 'gear')
                 ? '#ff4444' : '#ff8800';
     this.add.text(cx, cy - 80, title, {
       fontSize: '42px', color, fontFamily: 'monospace',
