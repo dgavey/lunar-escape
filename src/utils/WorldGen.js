@@ -201,8 +201,8 @@ export default class WorldGen {
     // Gentle floating bob animation
     this.scene.tweens.add({
       targets: sprite,
-      y: y - 6,
-      duration: 1200 + Math.floor(this._rand() * 600),
+      y: y - 24,
+      duration: 900 + Math.floor(this._rand() * 450),
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',

@@ -494,11 +494,23 @@ export default class GameScene extends Phaser.Scene {
       this._currentZone = zoneIdx;
       const zone = ZONES[zoneIdx];
 
-      // Update overlay tint
+      // Fade in overlay tint over 2 seconds
       if (zone.color !== null) {
         this._zoneOverlay.setFillStyle(zone.color, zone.alpha);
+        this._zoneOverlay.setAlpha(0);
+        this.tweens.add({
+          targets: this._zoneOverlay,
+          alpha: 1,
+          duration: 2000,
+          ease: 'Sine.easeInOut',
+        });
       } else {
-        this._zoneOverlay.setFillStyle(0x000000, 0);
+        this.tweens.add({
+          targets: this._zoneOverlay,
+          alpha: 0,
+          duration: 2000,
+          ease: 'Sine.easeInOut',
+        });
       }
 
       // Announce zone entry

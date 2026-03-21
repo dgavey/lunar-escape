@@ -9,7 +9,7 @@
 
 const SHIP_SCALE = 1.5;       // 64×64 sprite scaled to ~96px
 const SPRITE_ANGLE = -90;    // rotate sprite so nose points up (sheet has it facing right)
-const TIP_GAME_OVER = 70;    // degrees from upright = game over
+const TIP_GAME_OVER = 90;    // degrees from upright = game over (horizontal or inverted)
 const GEAR_DEPLOY_TIME = 700; // ms to fully deploy/retract
 const GEAR_LEG_SPREAD = 10;   // horizontal spread of leg feet from hinge
 

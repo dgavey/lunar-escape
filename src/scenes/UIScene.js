@@ -156,12 +156,12 @@ export default class UIScene extends Phaser.Scene {
     const title = reason === 'escaped'  ? 'ESCAPED!'
                 : reason === 'crash'    ? 'CRASHED!'
                 : reason === 'tipped'  ? 'TIPPED OVER!'
-                : reason === 'slid'    ? 'SLID OFF!'
-                : reason === 'asteroid' ? 'HIT BY ASTEROID!'
+
+                : reason === 'asteroid' ? 'CRASHED!'
                 : reason === 'gear'    ? 'CRASHED!'
                 : 'OUT OF FUEL';
     const color = isWin ? '#00ffaa'
-                : (reason === 'crash' || reason === 'tipped' || reason === 'slid' || reason === 'asteroid' || reason === 'gear')
+                : (reason === 'crash' || reason === 'tipped' || reason === 'asteroid' || reason === 'gear')
                 ? '#ff4444' : '#ff8800';
     this.add.text(cx, cy - 80, title, {
       fontSize: '42px', color, fontFamily: 'monospace',
