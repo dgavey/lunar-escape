@@ -1,6 +1,7 @@
 import Player from '../objects/Player.js';
 import WorldGen from '../utils/WorldGen.js';
 import AsteroidSpawner from '../utils/AsteroidSpawner.js';
+import AsteroidGlowPipeline from '../shaders/AsteroidGlowPipeline.js';
 
 const CRASH_VELOCITY = 120;  // px/s = instant crash (lower for moon gravity)
 const DEFAULT_SEED   = 0x3EF20;
@@ -44,6 +45,12 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
+    // Register asteroid glow shader (idempotent — safe across restarts)
+    const renderer = this.game.renderer;
+    if (renderer?.pipelines && !renderer.pipelines.has('AsteroidGlow')) {
+      renderer.pipelines.addPostPipeline('AsteroidGlow', AsteroidGlowPipeline);
+    }
+
     this.bonusScore    = 0;
     this.altitudeScore = 0;
     this.currentAltitude = 0;
@@ -550,7 +557,7 @@ export default class GameScene extends Phaser.Scene {
     this.worldGen.update(this.player.y);
     this.currentAltitude = Math.max(0, Math.floor((this._startY - this.player.y) / 8));
     this.altitudeScore = Math.max(this.altitudeScore, this.currentAltitude);
-    this.asteroidSpawner.update(this.altitudeScore);
+    this.asteroidSpawner.update(this.altitudeScore, time);
 
     // ── Landing gear auto-deploy ────────────────────────────────
     this._updateGearProximity();

@@ -1,21 +1,23 @@
 // Button layout (390 x 844 canvas)
-// Two buttons across the bottom: [ROT L] [ROT R]
-// Thrust = both pressed simultaneously
-const BTN_H      = 60;    // height
-const BTN_PAD_Y  = 86;    // padding from bottom (clears iOS home indicator + browser chrome)
-const BTN_Y      = 844 - BTN_H - BTN_PAD_Y; // top edge of buttons
-const BTN_W      = 120;   // button width
-const HALF_W     = 390 / 2; // center of each half
-const BTN_LEFT   = { x: HALF_W / 2 - BTN_W / 2, w: BTN_W };           // centered in left half
-const BTN_RIGHT  = { x: HALF_W + HALF_W / 2 - BTN_W / 2, w: BTN_W };  // centered in right half
+// Left side: two rotation buttons side by side [<< | >>]
+// Right side: two thrust buttons side by side [HALF | FULL], connected
+const BTN_PAD_Y   = 86;    // padding from bottom (clears iOS home indicator + browser chrome)
+const BTN_H       = 60;
+const BTN_Y       = 844 - BTN_H - BTN_PAD_Y;
+const GAP         = 8;     // gap between left buttons
 
-function hits(ptr, btn) {
-  return ptr.x >= btn.x && ptr.x <= btn.x + btn.w &&
-         ptr.y >= BTN_Y  && ptr.y <= BTN_Y + BTN_H;
-}
+// Left rotation buttons
+const ROT_W       = 70;
+const ROT_LEFT_X  = 20;
+const ROT_RIGHT_X = ROT_LEFT_X + ROT_W + GAP;
 
-function hitsAny(ptr) {
-  return ptr.y >= BTN_Y && ptr.y <= BTN_Y + BTN_H;
+// Right thrust buttons (connected, no gap)
+const THRUST_BTN_W = 65;
+const THRUST_FULL_X  = 390 - 20 - THRUST_BTN_W;           // FULL on the right
+const THRUST_HALF_X  = THRUST_FULL_X - THRUST_BTN_W;      // HALF on the left
+
+function hitsRect(ptr, x, y, w, h) {
+  return ptr.x >= x && ptr.x <= x + w && ptr.y >= y && ptr.y <= y + h;
 }
 
 export default class UIScene extends Phaser.Scene {
@@ -49,7 +51,7 @@ export default class UIScene extends Phaser.Scene {
     this.add.text(10, TOP + 36, `BEST: ${hi}`, { fontSize: '13px', color: '#888888', fontFamily: 'monospace' }).setScrollFactor(0);
 
     // ── Launch hint ───────────────────────────────────────────────
-    this.launchHint = this.add.text(width / 2, height * 0.32, 'HOLD BOTH TO LAUNCH', {
+    this.launchHint = this.add.text(width / 2, height * 0.32, 'HOLD THRUST TO LAUNCH', {
       fontSize: '22px', color: '#ffff00', fontFamily: 'monospace',
       stroke: '#000000', strokeThickness: 4,
     }).setOrigin(0.5).setScrollFactor(0);
@@ -57,25 +59,42 @@ export default class UIScene extends Phaser.Scene {
 
     // ── Control buttons ───────────────────────────────────────────
     this._btnGfx = this.add.graphics().setScrollFactor(0);
-    this._btnPressed = { left: false, thrust: false, right: false };
+    this._btnPressed = { left: false, right: false, thrustFull: false, thrustStutter: false };
     this._drawButtons();
 
-    this.add.text(BTN_LEFT.x   + BTN_LEFT.w / 2,   BTN_Y + BTN_H / 2, '<<', { fontSize: '26px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5).setScrollFactor(0);
-    this.add.text(BTN_RIGHT.x  + BTN_RIGHT.w / 2,  BTN_Y + BTN_H / 2, '>>', { fontSize: '26px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5).setScrollFactor(0);
+    // Labels for rotation buttons
+    this.add.text(ROT_LEFT_X + ROT_W / 2, BTN_Y + BTN_H / 2, '<<', { fontSize: '26px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5).setScrollFactor(0);
+    this.add.text(ROT_RIGHT_X + ROT_W / 2, BTN_Y + BTN_H / 2, '>>', { fontSize: '26px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5).setScrollFactor(0);
+
+    // Labels for thrust buttons
+    this.add.text(THRUST_HALF_X + THRUST_BTN_W / 2, BTN_Y + BTN_H / 2, 'HALF', { fontSize: '13px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5).setScrollFactor(0);
+    this.add.text(THRUST_FULL_X + THRUST_BTN_W / 2, BTN_Y + BTN_H / 2, 'FULL', { fontSize: '13px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5).setScrollFactor(0);
 
     // ── Multitouch button input ───────────────────────────────────
-    // Track by pointer id so simultaneous presses work correctly
     this.input.addPointer(2); // support up to 3 simultaneous touches
 
-    this._pointerBtns = {}; // ptr.id → which btn it pressed ('left'|'right'|null)
+    this._pointerBtns = {}; // ptr.id → 'left'|'right'|'thrustFull'|'thrustStutter'|null
 
     this.input.on('pointerdown', (ptr) => {
-      if (!hitsAny(ptr)) return;
-      const which = hits(ptr, BTN_LEFT) ? 'left'
-        : hits(ptr, BTN_RIGHT)          ? 'right'
-        : null;
+      const which = this._classifyPointer(ptr);
+      if (!which) return;
       this._pointerBtns[ptr.id] = which;
       this._syncBtns();
+    });
+
+    this.input.on('pointermove', (ptr) => {
+      if (!(ptr.id in this._pointerBtns)) return;
+      const prev = this._pointerBtns[ptr.id];
+      // Allow sliding between thrust buttons
+      if (prev === 'thrustFull' || prev === 'thrustStutter') {
+        if (hitsRect(ptr, THRUST_HALF_X, BTN_Y, THRUST_BTN_W, BTN_H)) {
+          this._pointerBtns[ptr.id] = 'thrustStutter';
+          this._syncBtns();
+        } else if (hitsRect(ptr, THRUST_FULL_X, BTN_Y, THRUST_BTN_W, BTN_H)) {
+          this._pointerBtns[ptr.id] = 'thrustFull';
+          this._syncBtns();
+        }
+      }
     });
 
     const release = (ptr) => {
@@ -91,39 +110,70 @@ export default class UIScene extends Phaser.Scene {
     });
   }
 
+  _classifyPointer(ptr) {
+    if (hitsRect(ptr, ROT_LEFT_X, BTN_Y, ROT_W, BTN_H)) return 'left';
+    if (hitsRect(ptr, ROT_RIGHT_X, BTN_Y, ROT_W, BTN_H)) return 'right';
+    if (hitsRect(ptr, THRUST_HALF_X, BTN_Y, THRUST_BTN_W, BTN_H)) return 'thrustStutter';
+    if (hitsRect(ptr, THRUST_FULL_X, BTN_Y, THRUST_BTN_W, BTN_H)) return 'thrustFull';
+    return null;
+  }
+
   _syncBtns() {
     const vals = Object.values(this._pointerBtns);
-    this._btnPressed.left   = vals.includes('left');
-    this._btnPressed.right  = vals.includes('right');
-    // Thrust = both buttons pressed simultaneously
-    this._btnPressed.thrust = this._btnPressed.left && this._btnPressed.right;
+    this._btnPressed.left          = vals.includes('left');
+    this._btnPressed.right         = vals.includes('right');
+    this._btnPressed.thrustFull    = vals.includes('thrustFull');
+    this._btnPressed.thrustStutter = vals.includes('thrustStutter');
 
     this._drawButtons();
 
     const game = this.scene.get('GameScene');
     if (game?.player) {
-      // When thrusting (both pressed), don't rotate
-      game.player._btnLeft   = this._btnPressed.left && !this._btnPressed.thrust;
-      game.player._btnRight  = this._btnPressed.right && !this._btnPressed.thrust;
-      game.player._btnThrust = this._btnPressed.thrust;
+      game.player._btnLeft    = this._btnPressed.left;
+      game.player._btnRight   = this._btnPressed.right;
+      game.player._btnThrust  = this._btnPressed.thrustFull;
+      game.player._btnStutter = this._btnPressed.thrustStutter;
     }
   }
 
   _drawButtons() {
     const g = this._btnGfx;
     g.clear();
-    const thrusting = this._btnPressed.thrust;
-    const btns = [
-      { def: BTN_LEFT,  pressed: this._btnPressed.left },
-      { def: BTN_RIGHT, pressed: this._btnPressed.right },
+
+    // Left rotation buttons
+    const rotBtns = [
+      { x: ROT_LEFT_X, pressed: this._btnPressed.left },
+      { x: ROT_RIGHT_X, pressed: this._btnPressed.right },
     ];
-    for (const { def, pressed } of btns) {
-      const lit = thrusting || pressed;
-      g.fillStyle(lit ? 0x6688aa : 0x223344, lit ? 0.85 : 0.55);
-      g.fillRoundedRect(def.x, BTN_Y, def.w, BTN_H, 8);
-      g.lineStyle(1, lit ? 0xaaccff : 0x445566, 0.8);
-      g.strokeRoundedRect(def.x, BTN_Y, def.w, BTN_H, 8);
+    for (const { x, pressed } of rotBtns) {
+      g.fillStyle(pressed ? 0x6688aa : 0x223344, pressed ? 0.85 : 0.55);
+      g.fillRoundedRect(x, BTN_Y, ROT_W, BTN_H, 8);
+      g.lineStyle(1, pressed ? 0xaaccff : 0x445566, 0.8);
+      g.strokeRoundedRect(x, BTN_Y, ROT_W, BTN_H, 8);
     }
+
+    // Right thrust buttons — connected horizontally [HALF | FULL]
+    const halfLit = this._btnPressed.thrustStutter;
+    const fullLit = this._btnPressed.thrustFull;
+
+    // HALF (left side, rounded left corners)
+    g.fillStyle(halfLit ? 0x666622 : 0x222211, halfLit ? 0.85 : 0.55);
+    g.fillRoundedRect(THRUST_HALF_X, BTN_Y, THRUST_BTN_W, BTN_H, { tl: 8, tr: 0, bl: 8, br: 0 });
+    g.lineStyle(1, halfLit ? 0xaaaa44 : 0x444422, 0.8);
+    g.strokeRoundedRect(THRUST_HALF_X, BTN_Y, THRUST_BTN_W, BTN_H, { tl: 8, tr: 0, bl: 8, br: 0 });
+
+    // FULL (right side, rounded right corners)
+    g.fillStyle(fullLit ? 0xaa6622 : 0x332211, fullLit ? 0.85 : 0.55);
+    g.fillRoundedRect(THRUST_FULL_X, BTN_Y, THRUST_BTN_W, BTN_H, { tl: 0, tr: 8, bl: 0, br: 8 });
+    g.lineStyle(1, fullLit ? 0xffaa44 : 0x554422, 0.8);
+    g.strokeRoundedRect(THRUST_FULL_X, BTN_Y, THRUST_BTN_W, BTN_H, { tl: 0, tr: 8, bl: 0, br: 8 });
+
+    // Divider line
+    g.lineStyle(1, 0x666666, 0.5);
+    g.beginPath();
+    g.moveTo(THRUST_FULL_X, BTN_Y + 4);
+    g.lineTo(THRUST_FULL_X, BTN_Y + BTN_H - 4);
+    g.strokePath();
   }
 
   update() {

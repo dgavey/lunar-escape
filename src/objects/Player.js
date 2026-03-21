@@ -81,9 +81,10 @@ export default class Player extends Phaser.GameObjects.Rectangle {
       up:     Phaser.Input.Keyboard.KeyCodes.UP,
     });
 
-    this._btnLeft   = false;
-    this._btnRight  = false;
-    this._btnThrust = false;
+    this._btnLeft    = false;
+    this._btnRight   = false;
+    this._btnThrust  = false;
+    this._btnStutter = false; // stutter fire: rapid on/off pulses
 
     this.crystalBoostTimer = 0; // seconds remaining of no-fuel-burn boost
   }
@@ -295,7 +296,9 @@ export default class Player extends Phaser.GameObjects.Rectangle {
     const dt = delta / 1000;
     const rotLeft   = this.cursors.left.isDown  || this._btnLeft;
     const rotRight  = this.cursors.right.isDown || this._btnRight;
-    const thrusting = (this.cursors.thrust.isDown || this.cursors.up.isDown || this._btnThrust) && this.fuel > 0;
+    // Stutter fire: ~8 Hz cycle (120ms period), 65% on / 35% off
+    const stutterOn = this._btnStutter && ((time % 120) < 78);
+    const thrusting = (this.cursors.thrust.isDown || this.cursors.up.isDown || this._btnThrust || stutterOn) && this.fuel > 0;
 
     this.grounded = this._groundContactIds.size > 0;
 

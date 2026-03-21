@@ -28,7 +28,7 @@ export default class AsteroidSpawner {
   _rand()            { return this._rng(); }
   _randFloat(a, b)   { return a + this._rng() * (b - a); }
 
-  update(altitude) {
+  update(altitude, time) {
     // Spawn foreground asteroids
     while (altitude >= this._nextFgAlt) {
       this._spawn(true);
@@ -62,6 +62,7 @@ export default class AsteroidSpawner {
           a.sprite.body.position,
           { x: 0, y: grav.y * grav.scale * a.sprite.body.mass * 0.25 }
         );
+
         // Clean up when off-screen
         if (a.sprite.y > camBot + 100 || a.sprite.y < camTop - 100 ||
             a.sprite.x < -200 || a.sprite.x > W + 200) {
@@ -130,6 +131,11 @@ export default class AsteroidSpawner {
 
     sprite.setVelocity(vx, vy);
     sprite.setAngularVelocity(this._randFloat(-0.05, 0.05));
+
+    // Apply re-entry glow shader
+    if (this.scene.game.renderer?.pipelines) {
+      sprite.setPostPipeline('AsteroidGlow');
+    }
 
     const entry = { sprite, fg: true, body: sprite.body, destroyed: false };
     this._asteroids.push(entry);
