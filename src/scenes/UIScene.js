@@ -1,0 +1,194 @@
+// Button layout (390 x 844 canvas)
+// Two buttons across the bottom: [ROT L] [ROT R]
+// Thrust = both pressed simultaneously
+const BTN_H      = 60;    // height
+const BTN_PAD    = 36;    // padding from bottom/sides (clears iOS home indicator)
+const BTN_Y      = 844 - BTN_H - BTN_PAD; // top edge of buttons
+const BTN_GAP    = 10;    // gap between buttons
+const BTN_W      = (390 - BTN_PAD * 2 - BTN_GAP) / 2; // each button width
+const BTN_LEFT   = { x: BTN_PAD, w: BTN_W };
+const BTN_RIGHT  = { x: BTN_PAD + BTN_W + BTN_GAP, w: BTN_W };
+
+function hits(ptr, btn) {
+  return ptr.x >= btn.x && ptr.x <= btn.x + btn.w &&
+         ptr.y >= BTN_Y  && ptr.y <= BTN_Y + BTN_H;
+}
+
+function hitsAny(ptr) {
+  return ptr.y >= BTN_Y && ptr.y <= BTN_Y + BTN_H;
+}
+
+export default class UIScene extends Phaser.Scene {
+  constructor() {
+    super({ key: 'UIScene', active: false });
+  }
+
+  create() {
+    const { width, height } = this.scale;
+
+    // ── Fuel bar ──────────────────────────────────────────────────
+    const TOP = 40; // inset from top edge
+    this.add.rectangle(width / 2, TOP + 14, 202, 18, 0x222222).setOrigin(0.5).setScrollFactor(0);
+    this.fuelFill = this.add.rectangle(width / 2 - 100, TOP + 5, 200, 16, 0x00ff44)
+      .setOrigin(0, 0).setScrollFactor(0);
+    this.add.text(width / 2, TOP + 26, 'FUEL', {
+      fontSize: '11px', color: '#888888', fontFamily: 'monospace',
+    }).setOrigin(0.5, 0).setScrollFactor(0);
+
+    // ── Stats ─────────────────────────────────────────────────────
+    this.altText   = this.add.text(10, TOP, 'ALT: 0m',  { fontSize: '15px', color: '#ffffff', fontFamily: 'monospace' }).setScrollFactor(0);
+    this.scoreText = this.add.text(10, TOP + 18, 'SCORE: 0', { fontSize: '15px', color: '#ffdd00', fontFamily: 'monospace' }).setScrollFactor(0);
+    const hi = localStorage.getItem('lunarClimberHi') || '0';
+    this.add.text(10, TOP + 36, `BEST: ${hi}`, { fontSize: '13px', color: '#888888', fontFamily: 'monospace' }).setScrollFactor(0);
+
+    // ── Launch hint ───────────────────────────────────────────────
+    this.launchHint = this.add.text(width / 2, height * 0.32, 'HOLD BOTH TO LAUNCH', {
+      fontSize: '22px', color: '#ffff00', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5).setScrollFactor(0);
+    this.tweens.add({ targets: this.launchHint, alpha: 0.2, duration: 600, yoyo: true, repeat: -1 });
+
+    // ── Control buttons ───────────────────────────────────────────
+    this._btnGfx = this.add.graphics().setScrollFactor(0);
+    this._btnPressed = { left: false, thrust: false, right: false };
+    this._drawButtons();
+
+    this.add.text(BTN_LEFT.x   + BTN_LEFT.w / 2,   BTN_Y + BTN_H / 2, '<<', { fontSize: '26px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5).setScrollFactor(0);
+    this.add.text(BTN_RIGHT.x  + BTN_RIGHT.w / 2,  BTN_Y + BTN_H / 2, '>>', { fontSize: '26px', color: '#ffffff', fontFamily: 'monospace' }).setOrigin(0.5).setScrollFactor(0);
+
+    // ── Multitouch button input ───────────────────────────────────
+    // Track by pointer id so simultaneous presses work correctly
+    this.input.addPointer(2); // support up to 3 simultaneous touches
+
+    this._pointerBtns = {}; // ptr.id → which btn it pressed ('left'|'right'|null)
+
+    this.input.on('pointerdown', (ptr) => {
+      if (!hitsAny(ptr)) return;
+      const which = hits(ptr, BTN_LEFT) ? 'left'
+        : hits(ptr, BTN_RIGHT)          ? 'right'
+        : null;
+      this._pointerBtns[ptr.id] = which;
+      this._syncBtns();
+    });
+
+    const release = (ptr) => {
+      delete this._pointerBtns[ptr.id];
+      this._syncBtns();
+    };
+    this.input.on('pointerup', release);
+    this.input.on('pointercancel', release);
+
+    // ── Game over event ───────────────────────────────────────────
+    this.scene.get('GameScene').events.on('gameover', (score, hi, reason) => {
+      this._showGameOver(score, hi, reason);
+    });
+  }
+
+  _syncBtns() {
+    const vals = Object.values(this._pointerBtns);
+    this._btnPressed.left   = vals.includes('left');
+    this._btnPressed.right  = vals.includes('right');
+    // Thrust = both buttons pressed simultaneously
+    this._btnPressed.thrust = this._btnPressed.left && this._btnPressed.right;
+
+    this._drawButtons();
+
+    const game = this.scene.get('GameScene');
+    if (game?.player) {
+      // When thrusting (both pressed), don't rotate
+      game.player._btnLeft   = this._btnPressed.left && !this._btnPressed.thrust;
+      game.player._btnRight  = this._btnPressed.right && !this._btnPressed.thrust;
+      game.player._btnThrust = this._btnPressed.thrust;
+    }
+  }
+
+  _drawButtons() {
+    const g = this._btnGfx;
+    g.clear();
+    const thrusting = this._btnPressed.thrust;
+    const btns = [
+      { def: BTN_LEFT,  pressed: this._btnPressed.left },
+      { def: BTN_RIGHT, pressed: this._btnPressed.right },
+    ];
+    for (const { def, pressed } of btns) {
+      const lit = thrusting || pressed;
+      g.fillStyle(lit ? 0x6688aa : 0x223344, lit ? 0.85 : 0.55);
+      g.fillRoundedRect(def.x, BTN_Y, def.w, BTN_H, 8);
+      g.lineStyle(1, lit ? 0xaaccff : 0x445566, 0.8);
+      g.strokeRoundedRect(def.x, BTN_Y, def.w, BTN_H, 8);
+    }
+  }
+
+  update() {
+    const game = this.scene.get('GameScene');
+    if (!game?.player) return;
+
+    const pct = Phaser.Math.Clamp(game.player.fuel / game.player.maxFuel, 0, 1);
+    this.fuelFill.width = 200 * pct;
+    this.fuelFill.fillColor = pct > 0.3 ? 0x00ff44 : 0xff4400;
+
+    this.altText.setText(`ALT: ${game.altitudeScore}m`);
+    this.scoreText.setText(`SCORE: ${game.getTotalScore()}`);
+
+    if (game.launched && this.launchHint.visible) {
+      this.launchHint.setVisible(false);
+    }
+  }
+
+  _showGameOver(score, hi, reason) {
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+
+    this.add.rectangle(cx, cy, width, height, 0x000000, 0.75).setScrollFactor(0);
+
+    const title = reason === 'crash'    ? 'CRASHED!'
+                : reason === 'tipped'  ? 'TIPPED OVER!'
+                : reason === 'slid'    ? 'SLID OFF!'
+                : reason === 'asteroid' ? 'HIT BY ASTEROID!'
+                : reason === 'gear'    ? 'GEAR NOT DEPLOYED!'
+                : 'OUT OF FUEL';
+    const color = (reason === 'crash' || reason === 'tipped' || reason === 'slid' || reason === 'asteroid' || reason === 'gear')
+                ? '#ff4444' : '#ff8800';
+    this.add.text(cx, cy - 80, title, {
+      fontSize: '42px', color, fontFamily: 'monospace',
+    }).setOrigin(0.5).setScrollFactor(0);
+
+    this.add.text(cx, cy - 20, `SCORE: ${score}`, {
+      fontSize: '26px', color: '#ffdd00', fontFamily: 'monospace',
+    }).setOrigin(0.5).setScrollFactor(0);
+
+    this.add.text(cx, cy + 20, `BEST: ${hi}`, {
+      fontSize: '20px', color: '#aaaaaa', fontFamily: 'monospace',
+    }).setOrigin(0.5).setScrollFactor(0);
+
+    if (score >= hi && score > 0) {
+      this.add.text(cx, cy + 52, 'NEW BEST!', {
+        fontSize: '18px', color: '#00ff88', fontFamily: 'monospace',
+      }).setOrigin(0.5).setScrollFactor(0);
+    }
+
+    // Show world seed so players can replay the same map
+    const game = this.scene.get('GameScene');
+    const seedHex = game?.worldSeedHex || '???';
+    this.add.text(cx, cy + 74, `SEED: 0x${seedHex}`, {
+      fontSize: '13px', color: '#555555', fontFamily: 'monospace',
+    }).setOrigin(0.5).setScrollFactor(0);
+
+    const btn = this.add.text(cx, cy + 115, '[ PLAY AGAIN ]', {
+      fontSize: '24px', color: '#ffffff', fontFamily: 'monospace',
+      backgroundColor: '#333333', padding: { x: 14, y: 8 },
+    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
+
+    btn.on('pointerover', () => btn.setColor('#ffff00'));
+    btn.on('pointerout',  () => btn.setColor('#ffffff'));
+
+    const restart = () => {
+      this.scene.stop('UIScene');
+      this.scene.stop('GameScene');
+      this.scene.start('GameScene');
+    };
+    btn.on('pointerdown', restart);
+    this.input.keyboard.once('keydown-SPACE', restart);
+  }
+}

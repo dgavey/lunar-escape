@@ -1,0 +1,26 @@
+{
+  "frames": {
+    "ship_green_rear":  { "frame": { "x": 0,   "y": 0,   "w": 64, "h": 64 } },
+    "ship_green_side":  { "frame": { "x": 64,  "y": 0,   "w": 64, "h": 64 } },
+    "ship_green_front": { "frame": { "x": 128, "y": 0,   "w": 64, "h": 64 } },
+    "ship_green_3q_l":  { "frame": { "x": 192, "y": 0,   "w": 64, "h": 64 } },
+    "ship_green_3q_r":  { "frame": { "x": 256, "y": 0,   "w": 64, "h": 64 } },
+
+    "ship_red_rear":  { "frame": { "x": 0,   "y": 64,  "w": 64, "h": 64 } },
+    "ship_red_side":  { "frame": { "x": 64,  "y": 64,  "w": 64, "h": 64 } },
+    "ship_red_front": { "frame": { "x": 128, "y": 64,  "w": 64, "h": 64 } },
+    "ship_red_3q_l":  { "frame": { "x": 192, "y": 64,  "w": 64, "h": 64 } },
+    "ship_red_3q_r":  { "frame": { "x": 256, "y": 64,  "w": 64, "h": 64 } },
+
+    "ship_blue_rear":  { "frame": { "x": 0,   "y": 128, "w": 64, "h": 64 } },
+    "ship_blue_side":  { "frame": { "x": 64,  "y": 128, "w": 64, "h": 64 } },
+    "ship_blue_front": { "frame": { "x": 128, "y": 128, "w": 64, "h": 64 } },
+    "ship_blue_3q_l":  { "frame": { "x": 192, "y": 128, "w": 64, "h": 64 } },
+    "ship_blue_3q_r":  { "frame": { "x": 256, "y": 128, "w": 64, "h": 64 } }
+  },
+  "meta": {
+    "image": "ships.png",
+    "size": { "w": 320, "h": 192 },
+    "scale": 1
+  }
+}
