@@ -154,6 +154,10 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   _startGame() {
+    // Ensure Web Audio context is unlocked (Firefox requires user gesture)
+    if (this.sound.context && this.sound.context.state === 'suspended') {
+      this.sound.context.resume();
+    }
     this.scene.stop('MenuScene');
     this.scene.start('GameScene');
   }
