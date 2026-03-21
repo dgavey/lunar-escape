@@ -1,4 +1,5 @@
 node_modules
 raw-assets
 dist
-*/.DS_STORE
+**/.DS_Store
+.DS_Store
