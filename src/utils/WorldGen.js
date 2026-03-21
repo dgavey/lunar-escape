@@ -18,6 +18,11 @@ const CRYSTAL_SCALE   = 1.5;
 const CRYSTAL_POINTS  = 100;
 const CRYSTAL_COLLECT_DIST = 24; // pickup radius in pixels
 
+const TRIFORCE_POINTS     = 500;
+const TRIFORCE_BOOST      = 10;    // seconds of no-fuel-burn
+const TRIFORCE_COLLECT_DIST = 36;  // larger pickup radius
+const TRIFORCE_CHANCE     = 0.35;  // chance per chunk
+
 // Fuel platform spacing in pixels (1 alt = 8px)
 const FUEL_MIN_EARLY = 560;   // 70 alt × 8px
 const FUEL_MAX_EARLY = 640;   // 80 alt × 8px
@@ -36,6 +41,8 @@ export default class WorldGen {
     this.highestY  = playerStartY - 80; // first chunk starts just above the player
     this._all      = [];
     this._crystals = [];
+    this._triforces = [];
+    this._triforceZonesSpawned = new Set(); // track which 500m zones have a triforce
     this._chunkIdx = 0;
     this._rng      = createRng(seed);
     this._lastFuelY = playerStartY;     // track last fuel platform for consistent spacing
@@ -86,22 +93,48 @@ export default class WorldGen {
         this._crystals.splice(i, 1);
       }
     }
+    // Destroy triforces far below
+    for (let i = this._triforces.length - 1; i >= 0; i--) {
+      if (this._triforces[i].baseY > playerY + 1000) {
+        this._triforces[i].container.destroy();
+        this._triforces.splice(i, 1);
+      }
+    }
   }
 
-  // Check if the player is touching any crystal and collect it
+  // Check if the player is touching any crystal/triforce and collect it
+  // Returns { points, boost } where boost is seconds of no-fuel-burn
   collectCrystals(playerX, playerY) {
     let points = 0;
+    let boost = 0;
+
+    // Regular crystals
     for (let i = this._crystals.length - 1; i >= 0; i--) {
       const c = this._crystals[i];
       const dx = playerX - c.sprite.x;
       const dy = playerY - c.sprite.y;
       if (dx * dx + dy * dy < CRYSTAL_COLLECT_DIST * CRYSTAL_COLLECT_DIST) {
         points += CRYSTAL_POINTS;
+        boost = Math.max(boost, 2.5);
         c.sprite.destroy();
         this._crystals.splice(i, 1);
       }
     }
-    return points;
+
+    // Triforces
+    for (let i = this._triforces.length - 1; i >= 0; i--) {
+      const tf = this._triforces[i];
+      const dx = playerX - tf.container.x;
+      const dy = playerY - tf.container.y;
+      if (dx * dx + dy * dy < TRIFORCE_COLLECT_DIST * TRIFORCE_COLLECT_DIST) {
+        points += TRIFORCE_POINTS;
+        boost = Math.max(boost, TRIFORCE_BOOST);
+        tf.container.destroy();
+        this._triforces.splice(i, 1);
+      }
+    }
+
+    return { points, boost };
   }
 
   // ── Chunk generation ─────────────────────────────────────────
@@ -156,15 +189,37 @@ export default class WorldGen {
       this._nextFuelDist = 0; // will recalculate on next chunk
     }
 
-    // ── Crystals: frequency increases with altitude ──
     const platPositions = this._all
       .filter(p => p.y >= topY && p.y <= topY + this.chunkHeight)
       .map(p => ({ x: p.x, y: p.y, hw: p.width / 2 }));
 
-    const crystalCount = this._randInt(1, 2 + Math.floor(t * 4)); // 1-2 early → 3-6 late
+    const MIN_PLAT_DIST = 60;
+    const MIN_CRYSTAL_DIST = 80;
+    const MIN_TRIFORCE_DIST = 100; // keep crystals away from triforces
+
+    // ── Triforce: one per 500m zone, spawned first so crystals avoid it ──
+    const chunkTriforces = [];
+    const topAltChunk = this._altAtY(topY);
+    const botAltChunk = this._altAtY(botY);
+    for (let zone = 0; zone < 5; zone++) {
+      if (this._triforceZonesSpawned.has(zone)) continue;
+      const zoneBase = zone * 500;
+      const tfAltMin = zoneBase + 100;
+      const tfAltMax = zoneBase + 400;
+      if (botAltChunk > tfAltMax || topAltChunk < tfAltMin) continue;
+
+      this._triforceZonesSpawned.add(zone);
+      const tfAlt = tfAltMin + this._rand() * (tfAltMax - tfAltMin);
+      const tfy = Math.round(this._playerStartY - tfAlt / ALT_PER_PX);
+      const tfMargin = 40;
+      const tfx = this._randInt(tfMargin, W - tfMargin);
+      this._spawnTriforce(tfx, tfy);
+      chunkTriforces.push({ x: tfx, y: tfy });
+    }
+
+    // ── Crystals: frequency increases with altitude ──
+    const crystalCount = this._randInt(1, 2 + Math.floor(t * 4));
     const crystalMargin = 20;
-    const MIN_PLAT_DIST = 60; // min distance from any platform edge
-    const MIN_CRYSTAL_DIST = 80; // min distance between crystals
     const chunkCrystals = [];
     for (let i = 0; i < crystalCount; i++) {
       const cy = Math.round(topY + this._rand() * this.chunkHeight);
@@ -185,6 +240,14 @@ export default class WorldGen {
         return dx * dx + dy * dy < MIN_CRYSTAL_DIST * MIN_CRYSTAL_DIST;
       });
       if (tooCloseToOther) continue;
+
+      // Skip if too close to a triforce
+      const tooCloseToTriforce = chunkTriforces.some(tf => {
+        const dx = cx - tf.x;
+        const dy = cy - tf.y;
+        return dx * dx + dy * dy < MIN_TRIFORCE_DIST * MIN_TRIFORCE_DIST;
+      });
+      if (tooCloseToTriforce) continue;
 
       chunkCrystals.push({ x: cx, y: cy });
       this._spawnCrystal(cx, cy);
@@ -209,5 +272,37 @@ export default class WorldGen {
     });
 
     this._crystals.push({ sprite, baseY: y });
+  }
+
+  _spawnTriforce(x, y) {
+    const container = this.scene.add.container(x, y);
+
+    // Three crystals in a triangle (triforce) formation — same size as regular crystals
+    const S = CRYSTAL_SCALE;
+    const spread = 10;
+    const offsets = [
+      { x: 0,        y: -spread },     // top
+      { x: -spread,  y: spread * 0.6 }, // bottom-left
+      { x:  spread,  y: spread * 0.6 }, // bottom-right
+    ];
+    for (const off of offsets) {
+      const gem = this.scene.add.image(off.x, off.y, 'crystal').setScale(S);
+      container.add(gem);
+    }
+
+    // Breathing: expand and contract as it bobs up and down
+    const breathDuration = 1000 + Math.floor(this._rand() * 400);
+    this.scene.tweens.add({
+      targets: container,
+      y: y - 20,
+      scaleX: 1.25,
+      scaleY: 1.25,
+      duration: breathDuration,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    this._triforces.push({ container, baseY: y });
   }
 }

@@ -411,13 +411,20 @@ export default class GameScene extends Phaser.Scene {
 
   _collectPlatform(player, platform) {
     platform.setCollected();
+    // Landing bonus for all platforms
+    const landingBonus = 250;
+    this.bonusScore += landingBonus;
+
     if (platform.platformType === 'fuel') {
       player.fuel = player.maxFuel;
       this._floatText(platform.x, platform.y - 20, 'FULL FUEL', '#00ff66');
+      this._floatText(platform.x, platform.y - 44, `+${landingBonus} LANDED`, '#ffdd00');
     } else if (platform.platformType === 'points') {
       const pts = platform.pointValue || 500;
       this.bonusScore += pts;
-      this._floatText(platform.x, platform.y - 20, `+${pts}`, '#ffdd00');
+      this._floatText(platform.x, platform.y - 20, `+${pts + landingBonus} LANDED`, '#ffdd00');
+    } else {
+      this._floatText(platform.x, platform.y - 20, `+${landingBonus} LANDED`, '#ffdd00');
     }
   }
 
@@ -565,12 +572,13 @@ export default class GameScene extends Phaser.Scene {
     // Debug: keep fuel full in god/noclip mode
     if (this._debugGod) this.player.fuel = this.player.maxFuel;
 
-    // Collect crystals on contact
-    const crystalPts = this.worldGen.collectCrystals(this.player.x, this.player.y);
-    if (crystalPts > 0) {
-      this.bonusScore += crystalPts;
-      this.player.crystalBoostTimer = 2.5; // 2.5 second no-fuel-burn boost
-      this._floatText(this.player.x, this.player.y - 30, `+${crystalPts}`, '#66eeff');
+    // Collect crystals / triforces on contact
+    const pickup = this.worldGen.collectCrystals(this.player.x, this.player.y);
+    if (pickup.points > 0) {
+      this.bonusScore += pickup.points;
+      this.player.crystalBoostTimer = pickup.boost;
+      const color = pickup.boost >= 10 ? '#ffee00' : '#66eeff';
+      this._floatText(this.player.x, this.player.y - 30, `+${pickup.points}`, color);
     }
 
     // Collect platform once the ship has settled upright on it
