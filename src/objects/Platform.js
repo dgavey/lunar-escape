@@ -38,6 +38,7 @@ export default class Platform extends Phaser.GameObjects.Rectangle {
     // ── Shield dome (half-circle above platform) ─────────────
     const radius = Math.max(width * 0.65, 50);
     this._shieldRadius = radius;
+    this._shieldOffsetY = -25;
 
     // Build half-circle vertices (dome above the platform)
     const N = 12;
@@ -57,9 +58,8 @@ export default class Platform extends Phaser.GameObjects.Rectangle {
     this._shieldGfx.setDepth(-0.5);
     this._drawShield(0.08);
 
-    // Sensor circle centered on the platform — detects asteroid overlap,
-    // collision handler applies the bounce manually (only above the platform)
-    this._shieldBody = scene.matter.add.circle(x, y, radius, {
+    // Sensor circle shifted up to better cover the player on the platform
+    this._shieldBody = scene.matter.add.circle(x, y + this._shieldOffsetY, radius, {
       isSensor: true,
       isStatic: true,
       label: 'platformShield',
@@ -75,7 +75,7 @@ export default class Platform extends Phaser.GameObjects.Rectangle {
     gfx.clear();
     gfx.lineStyle(1.5, SHIELD_COLOR, alpha);
     gfx.beginPath();
-    gfx.arc(this.x, this.y, r, Math.PI, 0, false);
+    gfx.arc(this.x, this.y + this._shieldOffsetY, r, Math.PI, 0, false);
     gfx.strokePath();
   }
 

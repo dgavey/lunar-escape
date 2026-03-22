@@ -258,7 +258,10 @@ export default class WorldGen {
     }
 
     // ── Crystals: frequency increases with altitude ──
-    const crystalCount = this._randInt(1, 2 + Math.floor(t * 4));
+    const midAlt = this._altAtY(midY);
+    const baseCount = 2 + Math.floor(t * 4);
+    const exoBoost = midAlt >= 2000 ? Math.ceil(baseCount * 0.2) : 0;
+    const crystalCount = this._randInt(1, baseCount + exoBoost);
     const crystalMargin = 20;
     const chunkCrystals = [];
     for (let i = 0; i < crystalCount; i++) {

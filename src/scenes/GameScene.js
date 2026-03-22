@@ -42,6 +42,7 @@ export default class GameScene extends Phaser.Scene {
     this.altitudeScore = 0;
     this.currentAltitude = 0;
     this._gameOver     = false;
+    this._escapeSequence = false;
     this.launched      = false;
     this._offScreenTime = null;
     this._landedPlatform = null;
@@ -171,6 +172,21 @@ export default class GameScene extends Phaser.Scene {
       }).setOrigin(0.5, 0);
     }
 
+    // ── Escape boundary line at 2500m ─────────────────────────
+    const escapeY = this._startY - WIN_ALT * 8;
+    this._escapeLineGfx = this.add.graphics();
+    this._escapeLineGfx.lineStyle(2, 0x00ffaa, 0.6);
+    for (let dx = 0; dx < W; dx += 16) {
+      this._escapeLineGfx.beginPath();
+      this._escapeLineGfx.moveTo(dx, escapeY);
+      this._escapeLineGfx.lineTo(dx + 10, escapeY);
+      this._escapeLineGfx.strokePath();
+    }
+    this._escapeLineLabel = this.add.text(W / 2, escapeY + 8, '── ESCAPE ──', {
+      fontSize: '14px', color: '#00ffaa', fontFamily: 'monospace',
+      alpha: 0.8,
+    }).setOrigin(0.5, 0);
+
     // ── Sound effects ─────────────────────────────────────────
     this._sfxPickup = this.sound.add('sfx_pickup', { volume: 0.5 });
     this._sfxExplosion = this.sound.add('sfx_explosion', { volume: 0.6 });
@@ -245,6 +261,34 @@ export default class GameScene extends Phaser.Scene {
       this.scene.stop('UIScene');
       this.scene.restart();
       console.log(`Restarting with seed: 0x${val.toString(16).toUpperCase()}`);
+    };
+    window.exo = () => {
+      // Teleport to the exosphere — generate platforms up to that altitude first
+      const targetAlt = 2000;
+      const targetY = this._startY - targetAlt * 8;
+      while (this.worldGen.highestY > targetY - this.worldGen.chunkHeight * 4) {
+        this.worldGen._generateChunk();
+      }
+      // Find the first platform near or above the exosphere boundary
+      const plat = this.worldGen._all
+        .filter(p => p.y <= this._startY - targetAlt * 8)
+        .sort((a, b) => b.y - a.y)[0]; // highest y = closest to boundary
+      if (plat) {
+        Phaser.Physics.Matter.Matter.Body.setPosition(this.player.body, { x: plat.x, y: plat.y - 30 });
+        Phaser.Physics.Matter.Matter.Body.setVelocity(this.player.body, { x: 0, y: 0 });
+        this.player.x = plat.x;
+        this.player.y = plat.y - 30;
+        this.cameras.main.scrollY = plat.y - this.scale.height * 0.5;
+        this.launched = true;
+        this.player.fuel = this.player.maxFuel;
+        this.altitudeScore = targetAlt;
+        // Skip asteroid spawner past current altitude so they don't all flood in
+        this.asteroidSpawner._nextFgAlt = targetAlt + 50;
+        this.asteroidSpawner._nextBgAlt = targetAlt + 50;
+        console.log(`Teleported to exosphere platform at y=${plat.y}, alt ~${targetAlt}m (god mode on)`);
+      } else {
+        console.error('No platform found near exosphere');
+      }
     };
   }
 
@@ -383,6 +427,8 @@ export default class GameScene extends Phaser.Scene {
             x: (dx / dist) * bounceSpeed,
             y: (dy / dist) * bounceSpeed,
           });
+          // Mark asteroid for extra gravity so it falls off screen faster
+          astBody.shieldDeflected = true;
           if (shieldBody.platform) shieldBody.platform.flashShield();
         }
       }
@@ -593,6 +639,7 @@ export default class GameScene extends Phaser.Scene {
 
   update(time, delta) {
     if (this._gameOver) return;
+    if (this._escapeSequence) return;
 
     this.cameras.main.scrollX = 0;
     if (this._starContainer) {
@@ -608,7 +655,7 @@ export default class GameScene extends Phaser.Scene {
     this.player.update(time, delta);
     this.worldGen.update(this.player.y);
     this.currentAltitude = Math.max(0, Math.floor((this._startY - this.player.y) / 8));
-    this.altitudeScore = Math.max(this.altitudeScore, this.currentAltitude);
+    this.altitudeScore = Math.min(WIN_ALT, Math.max(this.altitudeScore, this.currentAltitude));
     this.asteroidSpawner.update(this.altitudeScore, time);
 
     // ── Landing gear auto-deploy ────────────────────────────────
@@ -693,8 +740,9 @@ export default class GameScene extends Phaser.Scene {
     this._updateZone();
 
     // ── Win condition ─────────────────────────────────────────
-    if (this.altitudeScore >= WIN_ALT) {
-      this._triggerGameOver('escaped');
+    if (this.altitudeScore >= WIN_ALT && !this._escapeSequence) {
+      this._escapeSequence = true;
+      this._playEscapeSequence();
       return;
     }
 
@@ -834,6 +882,246 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  _playEscapeSequence() {
+    // Disable noclip/god if active
+    this._debugGod = false;
+    this._debugNoclip = false;
+    this.player._noclip = false;
+
+    // Make player invincible — pause physics so nothing can hit them
+    this.matter.world.pause();
+
+    // Clear all asteroids and escape line from the screen
+    this.asteroidSpawner.destroyAll();
+    if (this._escapeLineGfx) { this._escapeLineGfx.destroy(); this._escapeLineGfx = null; }
+    if (this._escapeLineLabel) { this._escapeLineLabel.destroy(); this._escapeLineLabel = null; }
+
+    // Stop thrust sound
+    if (this._thrustPlaying) {
+      if (this._thrustFadeTimer) { this._thrustFadeTimer.remove(false); this._thrustFadeTimer = null; }
+      this._rampThrustGain(0, 0.1);
+      this.time.delayedCall(110, () => this._sfxThrust.stop());
+      this._thrustPlaying = false;
+    }
+    if (this._crystalBoostPlaying) {
+      this._sfxCrystalBoost.stop();
+      this._crystalBoostPlaying = false;
+    }
+
+    // Hide flame and gear
+    this.player.flameGfx.setVisible(false);
+    this.player.gearGfx.setVisible(false);
+
+    const cam = this.cameras.main;
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const ship = this.player.shipSprite;
+
+    // Raise ship above the fade overlay (depth 5)
+    ship.setDepth(7);
+
+    // ── Phase 0: Move player to screen center, straighten ──────
+    const centerX = W / 2;
+    const centerWorldY = cam.scrollY + H / 2;
+
+    // Teleport the physics body
+    Phaser.Physics.Matter.Matter.Body.setPosition(this.player.body, {
+      x: centerX, y: centerWorldY,
+    });
+    Phaser.Physics.Matter.Matter.Body.setVelocity(this.player.body, { x: 0, y: 0 });
+
+    // Tween the visual player + ship to center
+    this.tweens.add({
+      targets: this.player,
+      x: centerX,
+      y: centerWorldY,
+      angle: 0,
+      duration: 600,
+      ease: 'Sine.easeInOut',
+    });
+    this.tweens.add({
+      targets: ship,
+      x: centerX,
+      y: centerWorldY,
+      angle: -90, // ship sprite's upright angle
+      duration: 600,
+      ease: 'Sine.easeInOut',
+    });
+
+    // ── Phase 1: Fade background to black, zoom in 3x ─────────
+    const blackOverlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0)
+      .setScrollFactor(0)
+      .setDepth(5);
+
+    this.time.delayedCall(600, () => {
+      this.tweens.add({
+        targets: blackOverlay,
+        fillAlpha: 0.85,
+        duration: 1000,
+        ease: 'Sine.easeIn',
+      });
+
+      cam.centerOn(centerX, centerWorldY);
+      this.tweens.add({
+        targets: cam,
+        zoom: 3,
+        duration: 1000,
+        ease: 'Sine.easeInOut',
+      });
+    });
+
+    // ── Phase 2: Shake the ship (charge up) ────────────────────
+    this.time.delayedCall(1900, () => {
+      // Shake ship sprite
+      this.tweens.add({
+        targets: ship,
+        x: ship.x - 2,
+        duration: 40,
+        yoyo: true,
+        repeat: 25, // ~2 seconds of shaking
+        ease: 'Sine.easeInOut',
+        onYoyo: () => {
+          ship.x += Phaser.Math.Between(-1, 1) * 2;
+        },
+      });
+
+      // Show charging glow — flash the ship brighter
+      this.tweens.add({
+        targets: ship,
+        alpha: { from: 0.6, to: 1 },
+        duration: 100,
+        yoyo: true,
+        repeat: 12,
+        onComplete: () => ship.setAlpha(1),
+      });
+    });
+
+    // ── Phase 3: Blast off through the top! ────────────────────
+    this.time.delayedCall(4000, () => {
+      // Triple thruster flames — 3 normal-sized flames side by side
+      const triFlame = this.add.graphics().setDepth(6);
+      const flameX = this.player.x;
+      const offsets = [-10, 0, 10]; // left, center, right
+
+      const flameTimer = this.time.addEvent({
+        delay: 30,
+        loop: true,
+        callback: () => {
+          triFlame.clear();
+          const py = this.player.y;
+          for (const ox of offsets) {
+            const len = 16 + Phaser.Math.Between(0, 8);
+            triFlame.fillStyle(0xff6600, 0.95);
+            triFlame.fillTriangle(flameX + ox - 5, py + 12, flameX + ox + 5, py + 12, flameX + ox, py + 12 + len);
+            triFlame.fillStyle(0xffff00, 0.7);
+            triFlame.fillTriangle(flameX + ox - 3, py + 12, flameX + ox + 3, py + 12, flameX + ox, py + 12 + len * 0.55);
+          }
+        },
+      });
+
+      // Blast the ship upward
+      this.tweens.add({
+        targets: [this.player, ship],
+        y: `-=${H * 2}`,
+        duration: 800,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          flameTimer.remove();
+          triFlame.destroy();
+        },
+      });
+
+      // Zoom back out
+      this.tweens.add({
+        targets: cam,
+        zoom: 1,
+        duration: 800,
+        ease: 'Sine.easeIn',
+      });
+
+      // Fade to full black
+      this.tweens.add({
+        targets: blackOverlay,
+        fillAlpha: 1,
+        duration: 600,
+        ease: 'Sine.easeIn',
+      });
+    });
+
+    // ── Phase 4: Fireworks ─────────────────────────────────────
+    this.time.delayedCall(5000, () => {
+      // Hide ship
+      ship.setVisible(false);
+      this.player.flameGfx.setVisible(false);
+
+      // Fireworks layer on top of the black
+      const fwGfx = this.add.graphics().setScrollFactor(0).setDepth(10);
+      const fireworks = [];
+      const COLORS = [0xff4444, 0x44ff44, 0x4488ff, 0xffdd00, 0xff44ff, 0x44ffff, 0xffffff];
+
+      const launchFirework = () => {
+        const fx = Phaser.Math.Between(40, W - 40);
+        const fy = Phaser.Math.Between(H * 0.15, H * 0.6);
+        const color = COLORS[Phaser.Math.Between(0, COLORS.length - 1)];
+        const particles = [];
+        const count = Phaser.Math.Between(12, 20);
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 * i) / count + Phaser.Math.FloatBetween(-0.2, 0.2);
+          const speed = Phaser.Math.FloatBetween(1.5, 4);
+          particles.push({
+            x: fx, y: fy,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            alpha: 1,
+            color,
+          });
+        }
+        fireworks.push(...particles);
+      };
+
+      // Launch fireworks in bursts
+      for (let i = 0; i < 8; i++) {
+        this.time.delayedCall(i * 350, launchFirework);
+      }
+
+      // Animate fireworks
+      const fwTimer = this.time.addEvent({
+        delay: 16,
+        loop: true,
+        callback: () => {
+          fwGfx.clear();
+          for (let i = fireworks.length - 1; i >= 0; i--) {
+            const p = fireworks[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.04; // gravity
+            p.alpha -= 0.012;
+            if (p.alpha <= 0) {
+              fireworks.splice(i, 1);
+              continue;
+            }
+            fwGfx.fillStyle(p.color, p.alpha);
+            fwGfx.fillCircle(p.x, p.y, 2);
+          }
+        },
+      });
+
+      // "ESCAPED!" text
+      const escapedText = this.add.text(W / 2, H * 0.08, 'ESCAPED!', {
+        fontSize: '42px', color: '#00ffaa', fontFamily: 'monospace',
+        stroke: '#000000', strokeThickness: 4,
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(11);
+
+      // ── Phase 5: Show score screen ───────────────────────────
+      this.time.delayedCall(3000, () => {
+        fwTimer.remove();
+        fwGfx.destroy();
+        escapedText.destroy();
+        this._triggerGameOver('escaped');
+      });
+    });
+  }
+
   _triggerGameOver(reason) {
     if (this._gameOver) return;
     this._gameOver = true;
@@ -843,6 +1131,14 @@ export default class GameScene extends Phaser.Scene {
     const prev  = parseInt(localStorage.getItem('lunarClimberHi') || '0');
     const hi    = Math.max(total, prev);
     if (total >= prev) localStorage.setItem('lunarClimberHi', String(total));
+
+    // Track best altitude
+    const alt = this.altitudeScore;
+    const prevAlt = parseInt(localStorage.getItem('lunarClimberHiAlt') || '0');
+    const hiAlt = Math.max(alt, prevAlt);
+    if (alt >= prevAlt) localStorage.setItem('lunarClimberHiAlt', String(alt));
+
+    const zoneName = ZONES[this._currentZone]?.name || 'SURFACE';
 
     // Stop looping sounds on game over
     if (this._crystalBoostPlaying) {
@@ -875,10 +1171,10 @@ export default class GameScene extends Phaser.Scene {
 
       // Show end screen after explosion finishes
       this.time.delayedCall(1000, () => {
-        this.events.emit('gameover', total, hi, reason);
+        this.events.emit('gameover', total, hi, reason, alt, hiAlt, zoneName);
       });
     } else {
-      this.events.emit('gameover', total, hi, reason);
+      this.events.emit('gameover', total, hi, reason, alt, hiAlt, zoneName);
     }
   }
 }

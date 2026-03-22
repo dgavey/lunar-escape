@@ -138,10 +138,16 @@ export default class MenuScene extends Phaser.Scene {
     helpBtn.on('pointerout', () => helpBtn.setColor('#aaaaaa'));
     helpBtn.on('pointerdown', () => this._showInstructions());
 
-    // ── High score ────────────────────────────────────────────
+    // ── High score & best altitude ─────────────────────────────
     const hi = localStorage.getItem('lunarClimberHi') || '0';
+    const hiAlt = localStorage.getItem('lunarClimberHiAlt');
+    const altStr = hiAlt ? `${hiAlt}m` : '???';
     if (parseInt(hi) > 0) {
-      this.add.text(cx, height * 0.70, `BEST: ${hi}`, {
+      this.add.text(cx, height * 0.70, `BEST: ${hi}  |  ALT: ${altStr}`, {
+        fontSize: '14px', color: '#666666', fontFamily: 'monospace',
+      }).setOrigin(0.5);
+    } else {
+      this.add.text(cx, height * 0.70, `ALT: ${altStr}`, {
         fontSize: '14px', color: '#666666', fontFamily: 'monospace',
       }).setOrigin(0.5);
     }

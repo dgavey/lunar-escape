@@ -110,8 +110,8 @@ export default class UIScene extends Phaser.Scene {
     this.input.on('pointercancel', release);
 
     // ── Game over event ───────────────────────────────────────────
-    this.scene.get('GameScene').events.on('gameover', (score, hi, reason) => {
-      this._showGameOver(score, hi, reason);
+    this.scene.get('GameScene').events.on('gameover', (score, hi, reason, alt, hiAlt, zoneName) => {
+      this._showGameOver(score, hi, reason, alt, hiAlt, zoneName);
     });
   }
 
@@ -215,7 +215,7 @@ export default class UIScene extends Phaser.Scene {
     }
   }
 
-  _showGameOver(score, hi, reason) {
+  _showGameOver(score, hi, reason, alt, hiAlt, zoneName) {
     const { width, height } = this.scale;
     const cx = width / 2;
     const cy = height / 2;
@@ -226,39 +226,59 @@ export default class UIScene extends Phaser.Scene {
     const title = reason === 'escaped'  ? 'ESCAPED!'
                 : reason === 'crash'    ? 'CRASHED!'
                 : reason === 'tipped'  ? 'TIPPED OVER!'
-
                 : reason === 'asteroid' ? 'CRASHED!'
                 : reason === 'gear'    ? 'CRASHED!'
                 : 'OUT OF FUEL';
     const color = isWin ? '#00ffaa'
                 : (reason === 'crash' || reason === 'tipped' || reason === 'asteroid' || reason === 'gear')
                 ? '#ff4444' : '#ff8800';
-    this.add.text(cx, cy - 80, title, {
+
+    let y = cy - 100;
+
+    this.add.text(cx, y, title, {
       fontSize: '42px', color, fontFamily: 'monospace',
     }).setOrigin(0.5).setScrollFactor(0);
+    y += 50;
 
-    this.add.text(cx, cy - 20, `SCORE: ${score}`, {
+    // Zone / sphere reached
+    this.add.text(cx, y, zoneName, {
+      fontSize: '16px', color: '#88aaff', fontFamily: 'monospace',
+    }).setOrigin(0.5).setScrollFactor(0);
+    y += 36;
+
+    // Score and Height — equal size and color
+    this.add.text(cx, y, `SCORE: ${score}`, {
       fontSize: '26px', color: '#ffdd00', fontFamily: 'monospace',
     }).setOrigin(0.5).setScrollFactor(0);
+    y += 34;
 
-    this.add.text(cx, cy + 20, `BEST: ${hi}`, {
-      fontSize: '20px', color: '#aaaaaa', fontFamily: 'monospace',
+    this.add.text(cx, y, `HEIGHT: ${alt}m`, {
+      fontSize: '26px', color: '#ffdd00', fontFamily: 'monospace',
     }).setOrigin(0.5).setScrollFactor(0);
+    y += 38;
 
-    if (score >= hi && score > 0) {
-      this.add.text(cx, cy + 52, 'NEW BEST!', {
+    // Best line: score | height
+    this.add.text(cx, y, `BEST: ${hi}  |  ${hiAlt}m`, {
+      fontSize: '18px', color: '#aaaaaa', fontFamily: 'monospace',
+    }).setOrigin(0.5).setScrollFactor(0);
+    y += 28;
+
+    if ((score >= hi && score > 0) || (alt >= hiAlt && alt > 0)) {
+      this.add.text(cx, y, 'NEW BEST!', {
         fontSize: '18px', color: '#00ff88', fontFamily: 'monospace',
       }).setOrigin(0.5).setScrollFactor(0);
+      y += 26;
     }
 
     // Show world seed so players can replay the same map
     const game = this.scene.get('GameScene');
     const seedHex = game?.worldSeedHex || '???';
-    this.add.text(cx, cy + 74, `SEED: 0x${seedHex}`, {
+    this.add.text(cx, y, `SEED: 0x${seedHex}`, {
       fontSize: '13px', color: '#555555', fontFamily: 'monospace',
     }).setOrigin(0.5).setScrollFactor(0);
+    y += 30;
 
-    const btn = this.add.text(cx, cy + 115, '[ PLAY AGAIN ]', {
+    const btn = this.add.text(cx, y + 10, '[ PLAY AGAIN ]', {
       fontSize: '24px', color: '#ffffff', fontFamily: 'monospace',
       backgroundColor: '#333333', padding: { x: 14, y: 8 },
     }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
@@ -272,6 +292,5 @@ export default class UIScene extends Phaser.Scene {
       this.scene.start('GameScene');
     };
     btn.on('pointerdown', restart);
-    this.input.keyboard.once('keydown-SPACE', restart);
   }
 }

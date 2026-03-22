@@ -12,6 +12,8 @@ function createRng(seed) {
 const MIN_ALT       = 200;   // asteroids start at altitude 200
 const BASE_INTERVAL = 80;    // one asteroid per 80 alt at the start
 const MIN_INTERVAL  = 15;    // fastest spawn rate at high difficulty
+const EXO_ALT       = 2000;  // exosphere starts here
+const EXO_EASE      = 1.2;   // 20% fewer asteroids in exosphere
 const SPEED_BASE    = 2.0;   // starting speed
 const SPEED_MAX_ADD = 3.0;   // max additional speed at high altitude
 const SCALE         = 2;     // 2x source size for the small asteroid
@@ -33,7 +35,8 @@ export default class AsteroidSpawner {
     while (altitude >= this._nextFgAlt) {
       this._spawn(true);
       const t = Math.min(1, (this._nextFgAlt - MIN_ALT) / 2000);
-      const interval = BASE_INTERVAL - t * (BASE_INTERVAL - MIN_INTERVAL);
+      let interval = BASE_INTERVAL - t * (BASE_INTERVAL - MIN_INTERVAL);
+      if (this._nextFgAlt >= EXO_ALT) interval *= EXO_EASE;
       this._nextFgAlt += Math.round(interval);
     }
 
@@ -41,7 +44,8 @@ export default class AsteroidSpawner {
     while (altitude >= this._nextBgAlt) {
       this._spawn(false);
       const t = Math.min(1, Math.max(0, this._nextBgAlt - MIN_ALT / 2) / 2000);
-      const interval = (BASE_INTERVAL - t * (BASE_INTERVAL - MIN_INTERVAL)) / 2;
+      let interval = (BASE_INTERVAL - t * (BASE_INTERVAL - MIN_INTERVAL)) / 2;
+      if (this._nextBgAlt >= EXO_ALT) interval *= EXO_EASE;
       this._nextBgAlt += Math.round(interval);
     }
 
@@ -55,12 +59,14 @@ export default class AsteroidSpawner {
       const a = this._asteroids[i];
 
       if (a.fg && a.body && !a.destroyed) {
-        // Apply 25% of world gravity manually (ignoreGravity is true)
+        // Apply gravity manually (ignoreGravity is true)
+        // Deflected asteroids get 3x gravity so they fall off screen faster
         const grav = this.scene.matter.world.engine.gravity;
+        const gravMult = a.body.shieldDeflected ? 0.75 : 0.25;
         Phaser.Physics.Matter.Matter.Body.applyForce(
           a.sprite.body,
           a.sprite.body.position,
-          { x: 0, y: grav.y * grav.scale * a.sprite.body.mass * 0.25 }
+          { x: 0, y: grav.y * grav.scale * a.sprite.body.mass * gravMult }
         );
 
         // Clean up when off-screen
@@ -160,6 +166,17 @@ export default class AsteroidSpawner {
     }
     a.sprite.destroy();
     this._asteroids.splice(idx, 1);
+  }
+
+  destroyAll() {
+    for (let i = this._asteroids.length - 1; i >= 0; i--) {
+      const a = this._asteroids[i];
+      if (a.fg && a.sprite.body) {
+        this.scene.matter.world.remove(a.sprite.body);
+      }
+      a.sprite.destroy();
+    }
+    this._asteroids = [];
   }
 
   destroyOnPlayerHit(asteroidBody) {
