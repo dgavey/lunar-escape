@@ -6,7 +6,7 @@ import ShieldGlowPipeline from '../shaders/ShieldGlowPipeline.js';
 import CrystalBoostPipeline from '../shaders/CrystalBoostPipeline.js';
 
 const CRASH_VELOCITY = 120;  // px/s = instant crash (lower for moon gravity)
-const DEFAULT_SEED   = 0x3EF20;
+const DEFAULT_SEED   = 0xFFE0;
 const WIN_ALT        = 2500;
 
 // Atmosphere zones — visual layers the player ascends through
@@ -43,6 +43,7 @@ export default class GameScene extends Phaser.Scene {
     this.currentAltitude = 0;
     this._gameOver     = false;
     this.launched      = false;
+    this._offScreenTime = null;
     this._landedPlatform = null;
     this._currentZone  = 0;
     this._zoneOverlay  = null;
@@ -365,7 +366,28 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (!playerBody) return;
+    // Asteroid hitting a platform shield — bounce away like a trampoline
+    if (!playerBody) {
+      let astBody = null, shieldBody = null;
+      if (bodyA.label === 'asteroid' && bodyB.label === 'platformShield') { astBody = bodyA; shieldBody = bodyB; }
+      if (bodyB.label === 'asteroid' && bodyA.label === 'platformShield') { astBody = bodyB; shieldBody = bodyA; }
+      if (astBody && shieldBody) {
+        // Only deflect if asteroid is above the platform (dome, not below)
+        if (astBody.position.y < shieldBody.position.y) {
+          const dx = astBody.position.x - shieldBody.position.x;
+          const dy = astBody.position.y - shieldBody.position.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const speed = Math.sqrt(astBody.velocity.x ** 2 + astBody.velocity.y ** 2);
+          const bounceSpeed = Math.max(speed, 3);
+          Phaser.Physics.Matter.Matter.Body.setVelocity(astBody, {
+            x: (dx / dist) * bounceSpeed,
+            y: (dy / dist) * bounceSpeed,
+          });
+          if (shieldBody.platform) shieldBody.platform.flashShield();
+        }
+      }
+      return;
+    }
 
     const isGround = otherBody.label === 'ground' || otherBody.label === 'platform';
     if (!isGround) return;
@@ -682,6 +704,18 @@ export default class GameScene extends Phaser.Scene {
     if (playerScreenY < FOLLOW_SCREEN_Y) {
       const target = this.player.y - FOLLOW_SCREEN_Y;
       this.cameras.main.scrollY += (target - this.cameras.main.scrollY) * 0.1;
+    }
+
+    // Game over if player falls below screen for more than 1 second
+    const camBottom = this.cameras.main.scrollY + this.scale.height;
+    if (this.launched && this.player.y > camBottom) {
+      if (!this._offScreenTime) {
+        this._offScreenTime = this.time.now;
+      } else if (this.time.now - this._offScreenTime >= 1000) {
+        this._triggerGameOver('crash');
+      }
+    } else {
+      this._offScreenTime = null;
     }
 
     // Game over 1.5s after running out of fuel
