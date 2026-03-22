@@ -39,6 +39,10 @@ Open the dev server URL in a mobile-sized browser or resize your desktop browser
 - High scores are stored in localStorage under the key `lunarClimberHi`.
 - Debug console helpers available in-game include `god()`, `noclip()`, `mortal()`, and `seed(hex)`.
 
+## Play online
+
+Play the hosted version: https://lunar-escape.gavey.ca/
+
 ## Credits
 
 Prototype and code by the project author. Some game art and assets were sourced from Matt Walkden's "Lunar Battle Pack" (https://mattwalkden.itch.io/lunar-battle-pack). Sound effects are variations of openly-licensed (Creative Commons / Open Content) sounds found online and were not all tracked individually. Remaining visuals are generated procedurally at runtime.
