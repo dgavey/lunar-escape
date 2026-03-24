@@ -226,21 +226,24 @@ export default class UIScene extends Phaser.Scene {
     const title = reason === 'escaped'  ? 'ESCAPED!'
                 : reason === 'crash'    ? 'CRASHED!'
                 : reason === 'tipped'  ? 'TIPPED OVER!'
-                : reason === 'asteroid' ? 'CRASHED!'
+                : reason === 'asteroid' ? 'DESTROYED BY ASTEROID'
                 : reason === 'gear'    ? 'CRASHED!'
                 : 'OUT OF FUEL';
     const color = isWin ? '#00ffaa'
                 : (reason === 'crash' || reason === 'tipped' || reason === 'asteroid' || reason === 'gear')
                 ? '#ff4444' : '#ff8800';
 
-    let y = cy - 100;
+    let y = cy - 150;
 
     this.add.text(cx, y, title, {
       fontSize: '42px', color, fontFamily: 'monospace',
+      wordWrap: { width: width - 40, useAdvancedWrap: true },
+      align: 'center',
     }).setOrigin(0.5).setScrollFactor(0);
     y += 50;
 
     // Zone / sphere reached
+    y += 20;
     this.add.text(cx, y, zoneName, {
       fontSize: '16px', color: '#88aaff', fontFamily: 'monospace',
     }).setOrigin(0.5).setScrollFactor(0);

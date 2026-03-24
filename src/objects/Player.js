@@ -79,6 +79,7 @@ export default class Player extends Phaser.GameObjects.Rectangle {
       right:  Phaser.Input.Keyboard.KeyCodes.RIGHT,
       thrust: Phaser.Input.Keyboard.KeyCodes.SPACE,
       up:     Phaser.Input.Keyboard.KeyCodes.UP,
+      down:   Phaser.Input.Keyboard.KeyCodes.DOWN,
     });
 
     this._btnLeft    = false;
@@ -299,7 +300,7 @@ export default class Player extends Phaser.GameObjects.Rectangle {
     const rotLeft   = this.cursors.left.isDown  || this._btnLeft;
     const rotRight  = this.cursors.right.isDown || this._btnRight;
     // Stutter fire: ~8 Hz cycle (120ms period), 65% on / 35% off
-    const stutterOn = this._btnStutter && ((time % 120) < 78);
+    const stutterOn = (this._btnStutter || this.cursors.down.isDown) && ((time % 120) < 78);
     const thrusting = (this.cursors.thrust.isDown || this.cursors.up.isDown || this._btnThrust || stutterOn) && this.fuel > 0;
 
     this.grounded = this._groundContactIds.size > 0;

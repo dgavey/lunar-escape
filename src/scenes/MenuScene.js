@@ -252,10 +252,10 @@ export default class MenuScene extends Phaser.Scene {
     els.push(this.add.text(30, y, 'KEYBOARD', {
       fontSize: '12px', color: '#ffdd00', fontFamily: 'monospace',
     }));
-    els.push(this.add.text(30, y + 18, 'Left/Right = Rotate\nSpace/Up    = Thrust', {
+    els.push(this.add.text(30, y + 18, 'Left/Right = Rotate\nSpace/Up    = Thrust\nDown        = Half Thrust', {
       fontSize: '12px', color: '#999999', fontFamily: 'monospace', lineSpacing: 4,
     }));
-    y += 58;
+    y += 73;
 
     // Touch — draw mock buttons
     els.push(this.add.text(30, y, 'TOUCH', {
