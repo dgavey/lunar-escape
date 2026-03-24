@@ -405,7 +405,7 @@ export default class GameScene extends Phaser.Scene {
     const [playerBody, otherBody] = this._getPlayerAndOther(bodyA, bodyB);
     if (playerBody && otherBody.label === 'asteroid') {
       this.asteroidSpawner.destroyOnPlayerHit(otherBody);
-      if (this._consumeShield()) return;
+      if (this._consumeShield(otherBody.shieldDeflected)) return;
       this._triggerGameOver('asteroid');
       return;
     }
@@ -701,7 +701,7 @@ export default class GameScene extends Phaser.Scene {
         this._crystalBoostPlaying = true;
       }
       this.bonusScore += pickup.points;
-      this.player.crystalBoostTimer = pickup.boost;
+      this.player.crystalBoostTimer = Math.max(this.player.crystalBoostTimer, pickup.boost);
       const color = pickup.boost >= 10 ? '#ffee00' : '#66eeff';
       this._floatText(this.player.x, this.player.y - 30, `+${pickup.points}`, color);
     }
@@ -818,7 +818,7 @@ export default class GameScene extends Phaser.Scene {
     return this.altitudeScore + this.bonusScore;
   }
 
-  _consumeShield() {
+  _consumeShield(deflectedAsteroid) {
     if (this.player.shieldCount <= 0) return false;
     this.player.shieldCount--;
     this._updateShieldShader();
@@ -827,10 +827,19 @@ export default class GameScene extends Phaser.Scene {
 
     // Ease velocity to half over 300ms
     const body = this.player.body;
+    const Body = Phaser.Physics.Matter.Matter.Body;
+
+    // If hit by a shield-deflected asteroid, the collision impulse has already
+    // imparted a large velocity to the player. Reset to the pre-collision
+    // velocity so the shield slowdown feels the same as a normal asteroid hit.
+    if (deflectedAsteroid) {
+      Body.setVelocity(body, { x: body.velocity.x * 0.3, y: this.player.prevVelocityY / 60 * 0.3 });
+      Body.setAngularVelocity(body, body.angularVelocity * 0.3);
+    }
+
     const startVx = body.velocity.x;
     const startVy = body.velocity.y;
     const startAv = body.angularVelocity;
-    const Body = Phaser.Physics.Matter.Matter.Body;
     const startTime = this.time.now;
     const duration = 300;
 
